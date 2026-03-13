@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: projectc-ethereum-connector
+  labels:
+    app: projectc-ethereum-connector
+spec:
+  selector:
+    app: projectc-ethereum-connector
+  ports:
+    - port: 8081
+      targetPort: 8081
+      protocol: TCP
+      name: http

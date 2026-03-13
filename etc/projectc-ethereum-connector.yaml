@@ -1,0 +1,21 @@
+server:
+  host: "0.0.0.0"
+  port: 8081
+  version: "0.1.0"
+gin:
+  mode: debug
+log:
+  level: info
+auth:
+  username: "test"
+  password: "test"
+mysql:
+  dsn: "root:password@tcp(127.0.0.1:3306)/gin_apiserver?charset=utf8mb4&parseTime=True&loc=Local"
+  maxIdleConns: 10
+  maxOpenConns: 20
+rabbitmq:
+  url: "amqp://guest:guest@127.0.0.1:5672/"
+  exchange: "projectc-ethereum-connector.exchange"
+  exchangeType: "direct"
+  queue: "projectc-ethereum-connector.queue"
+  routingKey: "projectc-ethereum-connector.queue"

@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: projectc-ethereum-connector
+  labels:
+    app: projectc-ethereum-connector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: projectc-ethereum-connector
+  template:
+    metadata:
+      labels:
+        app: projectc-ethereum-connector
+    spec:
+      containers:
+        - name: projectc-ethereum-connector
+          image: REPLACE_IMAGE
+          ports:
+            - containerPort: 8081
