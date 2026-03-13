@@ -9,29 +9,43 @@ import (
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/mysql"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/rabbitmq"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/route"
+	"github.com/guyuxiang/projectc-ethereum-connector/pkg/store"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/util"
 )
 
 func main() {
 	util.SetupSigusr1Trap()
 
-	if _, err := mysql.Init(config.GetConfig().MySQL); err != nil {
-		log.Fatalf("init mysql failed: %v", err)
-	}
-	defer func() {
-		if err := mysql.Close(); err != nil {
-			log.Errorf("close mysql failed: %v", err)
+	if mysqlCfg := config.GetConfig().MySQL; mysqlCfg != nil && mysqlCfg.DSN != "" {
+		if _, err := mysql.Init(mysqlCfg); err != nil {
+			log.Fatalf("init mysql failed: %v", err)
 		}
-	}()
+		defer func() {
+			if err := mysql.Close(); err != nil {
+				log.Errorf("close mysql failed: %v", err)
+			}
+		}()
+		log.Infof("mysql initialized successfully")
+		if err := store.AutoMigrate(); err != nil {
+			log.Fatalf("auto migrate connector tables failed: %v", err)
+		}
+	} else {
+		log.Infof("mysql initialization skipped")
+	}
 
-	if _, err := rabbitmq.Init(config.GetConfig().RabbitMQ); err != nil {
-		log.Fatalf("init rabbitmq failed: %v", err)
-	}
-	defer func() {
-		if err := rabbitmq.Close(); err != nil {
-			log.Errorf("close rabbitmq failed: %v", err)
+	if rabbitCfg := config.GetConfig().RabbitMQ; rabbitCfg != nil && rabbitCfg.URL != "" {
+		if _, err := rabbitmq.Init(rabbitCfg); err != nil {
+			log.Fatalf("init rabbitmq failed: %v", err)
 		}
-	}()
+		defer func() {
+			if err := rabbitmq.Close(); err != nil {
+				log.Errorf("close rabbitmq failed: %v", err)
+			}
+		}()
+		log.Infof("rabbitmq initialized successfully")
+	} else {
+		log.Infof("rabbitmq initialization skipped")
+	}
 
 	r := gin.Default()
 	m := config.GetString(config.FLAG_KEY_GIN_MODE)
@@ -39,8 +53,6 @@ func main() {
 
 	route.InstallRoutes(r)
 	serverBindAddr := fmt.Sprintf("%s:%d", config.GetString(config.FLAG_KEY_SERVER_HOST), config.GetInt(config.FLAG_KEY_SERVER_PORT))
-	log.Infof("mysql initialized successfully")
-	log.Infof("rabbitmq initialized successfully")
 	log.Infof("Run server at %s", serverBindAddr)
 	r.Run(serverBindAddr) // listen and serve
 }

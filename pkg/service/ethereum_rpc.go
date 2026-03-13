@@ -1,0 +1,892 @@
+package service
+
+import (
+	"bytes"
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math/big"
+	"net/http"
+	"reflect"
+	"strings"
+	"time"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/guyuxiang/projectc-ethereum-connector/pkg/config"
+	"github.com/guyuxiang/projectc-ethereum-connector/pkg/models"
+)
+
+type EthereumService interface {
+	SendRawTransaction(ctx context.Context, networkCode, signedTx string) (string, error)
+	QueryTransaction(ctx context.Context, networkCode, txHash string) (*models.TxQueryResponse, error)
+	GetAddressBalance(ctx context.Context, networkCode, address string) (*models.AddressBalanceResponse, error)
+	GetLatestBlock(ctx context.Context, networkCode string) (*models.LatestBlockResponse, error)
+	GetTokenSupply(ctx context.Context, networkCode, tokenCode string) (*models.TokenSupplyResponse, error)
+	GetTokenBalance(ctx context.Context, networkCode, tokenCode, address string) (*models.TokenBalanceResponse, error)
+}
+
+type ethereumService struct {
+	client    *http.Client
+	networks  map[string]config.NetworkConfig
+	contracts ContractRegistryService
+}
+
+func NewEthereumService(contracts ContractRegistryService) EthereumService {
+	cfg := config.GetConfig()
+	networks := make(map[string]config.NetworkConfig)
+	if cfg.Ethereum != nil {
+		for _, network := range cfg.Ethereum.Networks {
+			networks[network.Code] = network
+		}
+	}
+	return &ethereumService{
+		client:    &http.Client{Timeout: 15 * time.Second},
+		networks:  networks,
+		contracts: contracts,
+	}
+}
+
+func (s *ethereumService) SendRawTransaction(ctx context.Context, networkCode, signedTx string) (string, error) {
+	var txHash string
+	if err := s.rpcCall(ctx, networkCode, "eth_sendRawTransaction", []interface{}{signedTx}, &txHash); err != nil {
+		return "", err
+	}
+	return txHash, nil
+}
+
+func (s *ethereumService) QueryTransaction(ctx context.Context, networkCode, txHash string) (*models.TxQueryResponse, error) {
+	var tx rpcTransaction
+	if err := s.rpcCall(ctx, networkCode, "eth_getTransactionByHash", []interface{}{txHash}, &tx); err != nil {
+		if errors.Is(err, errRPCNullResult) {
+			return &models.TxQueryResponse{IfTxOnchain: false}, nil
+		}
+		return nil, err
+	}
+
+	var receipt rpcReceipt
+	if err := s.rpcCall(ctx, networkCode, "eth_getTransactionReceipt", []interface{}{txHash}, &receipt); err != nil {
+		if !errors.Is(err, errRPCNullResult) {
+			return nil, err
+		}
+	}
+
+	blockTimestamp := uint64(0)
+	if receipt.BlockNumber != "" {
+		block, err := s.getBlockByNumber(ctx, networkCode, receipt.BlockNumber)
+		if err == nil {
+			blockTimestamp = hexUint64(block.Timestamp) * 1000
+		}
+	}
+
+	status := "FAILED"
+	if receipt.Status == "" || receipt.Status == "0x1" {
+		status = "SUCCESS"
+	}
+
+	result := &models.TxQueryResponse{
+		IfTxOnchain: true,
+		Tx: &models.ChainTx{
+			Code:           tx.Hash,
+			NetworkCode:    networkCode,
+			BlockNumber:    hexUint64(receipt.BlockNumber),
+			Timestamp:      blockTimestamp,
+			Fee:            calcFee(receipt.EffectiveGasPrice, receipt.GasUsed),
+			From:           tx.From,
+			To:             tx.To,
+			Amount:         models.RawNumber(hexToBigIntString(tx.Value)),
+			Status:         status,
+			SequenceNumber: fmt.Sprintf("%d", hexUint64(tx.Nonce)),
+		},
+		TxEvents: make([]models.ChainEvent, 0, len(receipt.Logs)),
+	}
+
+	for _, logEntry := range receipt.Logs {
+		eventType, eventName, eventData := s.decodeLogEvent(networkCode, logEntry)
+		result.TxEvents = append(result.TxEvents, models.ChainEvent{
+			Code:        fmt.Sprintf("%s:%d", tx.Hash, hexUint64(logEntry.LogIndex)),
+			NetworkCode: networkCode,
+			BlockNumber: hexUint64(logEntry.BlockNumber),
+			Timestamp:   blockTimestamp,
+			Fee:         result.Tx.Fee,
+			Type:        eventType,
+			DataType:    eventName,
+			LogIndex:    fmt.Sprintf("%d", hexUint64(logEntry.LogIndex)),
+			Data:        eventData,
+		})
+	}
+
+	return result, nil
+}
+
+func (s *ethereumService) GetAddressBalance(ctx context.Context, networkCode, address string) (*models.AddressBalanceResponse, error) {
+	var balanceHex string
+	if err := s.rpcCall(ctx, networkCode, "eth_getBalance", []interface{}{address, "latest"}, &balanceHex); err != nil {
+		return nil, err
+	}
+
+	balance, ok := new(big.Int).SetString(strings.TrimPrefix(balanceHex, "0x"), 16)
+	if !ok {
+		return nil, fmt.Errorf("invalid balance hex: %s", balanceHex)
+	}
+
+	return &models.AddressBalanceResponse{
+		Balance:     models.RawNumber(formatWeiToEther(balance)),
+		BalanceUnit: "ETHER",
+	}, nil
+}
+
+func (s *ethereumService) GetLatestBlock(ctx context.Context, networkCode string) (*models.LatestBlockResponse, error) {
+	block, err := s.getBlockByNumber(ctx, networkCode, "latest")
+	if err != nil {
+		return nil, err
+	}
+	return &models.LatestBlockResponse{
+		BlockNumber: hexUint64(block.Number),
+		Timestamp:   hexUint64(block.Timestamp) * 1000,
+	}, nil
+}
+
+func (s *ethereumService) GetTokenSupply(ctx context.Context, networkCode, tokenCode string) (*models.TokenSupplyResponse, error) {
+	contract, err := s.contracts.FindContract(networkCode, tokenCode)
+	if err != nil {
+		return nil, err
+	}
+	value, err := s.ethCall(ctx, networkCode, contract.Address, "0x18160ddd")
+	if err != nil {
+		return nil, err
+	}
+	return &models.TokenSupplyResponse{Value: models.RawNumber(hexToBigIntString(value))}, nil
+}
+
+func (s *ethereumService) GetTokenBalance(ctx context.Context, networkCode, tokenCode, address string) (*models.TokenBalanceResponse, error) {
+	contract, err := s.contracts.FindContract(networkCode, tokenCode)
+	if err != nil {
+		return nil, err
+	}
+
+	paddedAddress := leftPadHex(strings.TrimPrefix(strings.ToLower(address), "0x"), 64)
+	value, err := s.ethCall(ctx, networkCode, contract.Address, "0x70a08231"+paddedAddress)
+	if err != nil {
+		return nil, err
+	}
+	return &models.TokenBalanceResponse{Value: models.RawNumber(hexToBigIntString(value))}, nil
+}
+
+func (s *ethereumService) getBlockByNumber(ctx context.Context, networkCode, blockNumber string) (*rpcBlock, error) {
+	var block rpcBlock
+	if err := s.rpcCall(ctx, networkCode, "eth_getBlockByNumber", []interface{}{blockNumber, false}, &block); err != nil {
+		return nil, err
+	}
+	return &block, nil
+}
+
+func (s *ethereumService) ethCall(ctx context.Context, networkCode, to, data string) (string, error) {
+	var result string
+	if err := s.rpcCall(ctx, networkCode, "eth_call", []interface{}{
+		map[string]interface{}{"to": to, "data": data},
+		"latest",
+	}, &result); err != nil {
+		return "", err
+	}
+	return result, nil
+}
+
+var errRPCNullResult = errors.New("rpc returned null result")
+
+func (s *ethereumService) rpcCall(ctx context.Context, networkCode, method string, params []interface{}, out interface{}) error {
+	network, ok := s.networks[networkCode]
+	if !ok || network.RPCURL == "" {
+		return fmt.Errorf("network %s is not configured", networkCode)
+	}
+
+	body, err := json.Marshal(map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  method,
+		"params":  params,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, network.RPCURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	payload, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	var rpcResp rpcResponse
+	if err = json.Unmarshal(payload, &rpcResp); err != nil {
+		return err
+	}
+	if rpcResp.Error != nil {
+		return fmt.Errorf("rpc error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+	}
+	if string(rpcResp.Result) == "null" {
+		return errRPCNullResult
+	}
+	if out == nil {
+		return nil
+	}
+	return json.Unmarshal(rpcResp.Result, out)
+}
+
+type rpcResponse struct {
+	Result json.RawMessage `json:"result"`
+	Error  *rpcError       `json:"error"`
+}
+
+type rpcError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type rpcTransaction struct {
+	Hash  string `json:"hash"`
+	From  string `json:"from"`
+	To    string `json:"to"`
+	Value string `json:"value"`
+	Nonce string `json:"nonce"`
+}
+
+type rpcReceipt struct {
+	BlockNumber       string         `json:"blockNumber"`
+	Status            string         `json:"status"`
+	GasUsed           string         `json:"gasUsed"`
+	EffectiveGasPrice string         `json:"effectiveGasPrice"`
+	Logs              []rpcLogRecord `json:"logs"`
+}
+
+type rpcLogRecord struct {
+	BlockNumber string   `json:"blockNumber"`
+	Address     string   `json:"address"`
+	LogIndex    string   `json:"logIndex"`
+	Topics      []string `json:"topics"`
+	Data        string   `json:"data"`
+}
+
+type rpcBlock struct {
+	Number    string `json:"number"`
+	Timestamp string `json:"timestamp"`
+}
+
+func formatWeiToEther(wei *big.Int) string {
+	if wei == nil {
+		return "0"
+	}
+	rat := new(big.Rat).SetInt(wei)
+	denominator := new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
+	return new(big.Rat).Quo(rat, denominator).FloatString(18)
+}
+
+func calcFee(priceHex, gasUsedHex string) string {
+	price := hexToBigInt(priceHex)
+	gasUsed := hexToBigInt(gasUsedHex)
+	if price == nil || gasUsed == nil {
+		return "0"
+	}
+	return new(big.Int).Mul(price, gasUsed).String()
+}
+
+func hexUint64(value string) uint64 {
+	if value == "" {
+		return 0
+	}
+	out, _ := new(big.Int).SetString(strings.TrimPrefix(value, "0x"), 16)
+	if out == nil {
+		return 0
+	}
+	return out.Uint64()
+}
+
+func hexToBigIntString(value string) string {
+	number := hexToBigInt(value)
+	if number == nil {
+		return "0"
+	}
+	return number.String()
+}
+
+func hexToBigInt(value string) *big.Int {
+	if value == "" {
+		return big.NewInt(0)
+	}
+	trimmed := strings.TrimPrefix(value, "0x")
+	if trimmed == "" {
+		return big.NewInt(0)
+	}
+	if len(trimmed)%2 == 1 {
+		trimmed = "0" + trimmed
+	}
+	raw, err := hex.DecodeString(trimmed)
+	if err != nil {
+		return nil
+	}
+	return new(big.Int).SetBytes(raw)
+}
+
+func leftPadHex(value string, width int) string {
+	if len(value) >= width {
+		return value[len(value)-width:]
+	}
+	return strings.Repeat("0", width-len(value)) + value
+}
+
+func (s *ethereumService) decodeLogEvent(networkCode string, logEntry rpcLogRecord) (string, string, string) {
+	contract := s.findContractByAddress(networkCode, logEntry.Address)
+	if contract == nil || contract.InterfaceDefinition == "" || len(logEntry.Topics) == 0 {
+		return "", "", logEntry.Data
+	}
+	parsedABI, err := abi.JSON(strings.NewReader(contract.InterfaceDefinition))
+	if err != nil {
+		return "", "", logEntry.Data
+	}
+
+	topic0 := common.HexToHash(logEntry.Topics[0])
+	var matched *abi.Event
+	for _, event := range parsedABI.Events {
+		if event.ID == topic0 {
+			copyEvent := event
+			matched = &copyEvent
+			break
+		}
+	}
+	if matched == nil {
+		return "", "", logEntry.Data
+	}
+
+	payload := map[string]interface{}{
+		"contractCode": contract.Code,
+		"contractAddr": contract.Address,
+	}
+	if unpacked, unpackErr := matched.Inputs.NonIndexed().Unpack(common.FromHex(logEntry.Data)); unpackErr == nil {
+		nonIndexedPos := 0
+		for _, input := range matched.Inputs {
+			if input.Indexed {
+				continue
+			}
+			if nonIndexedPos < len(unpacked) {
+				payload[input.Name] = normalizeABIValue(unpacked[nonIndexedPos])
+			}
+			nonIndexedPos++
+		}
+	}
+	indexedArgs := make(abi.Arguments, 0, len(matched.Inputs))
+	for _, input := range matched.Inputs {
+		if input.Indexed {
+			indexedArgs = append(indexedArgs, input)
+		}
+	}
+	if len(indexedArgs) > 0 && len(logEntry.Topics) > 1 {
+		topics := make([]common.Hash, 0, len(logEntry.Topics)-1)
+		for _, topic := range logEntry.Topics[1:] {
+			topics = append(topics, common.HexToHash(topic))
+		}
+		topicMap := map[string]interface{}{}
+		if parseErr := abi.ParseTopicsIntoMap(topicMap, indexedArgs, topics); parseErr == nil {
+			for key, value := range topicMap {
+				payload[key] = normalizeABIValue(value)
+			}
+		}
+	}
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return determineChainEventType(matched.Name, contract.Code), matched.Name, logEntry.Data
+	}
+	eventType := determineChainEventType(matched.Name, contract.Code)
+	return eventType, matched.Name, transformEventData(eventType, contract, string(raw))
+}
+
+func (s *ethereumService) findContractByAddress(networkCode, address string) *models.ContractInfo {
+	for _, contract := range s.contracts.ListContracts(networkCode) {
+		if strings.EqualFold(contract.Address, address) {
+			copyContract := contract
+			return &copyContract
+		}
+	}
+	return nil
+}
+
+func normalizeABIValue(value interface{}) interface{} {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case common.Address:
+		return strings.ToLower(v.Hex())
+	case *big.Int:
+		if v == nil {
+			return "0"
+		}
+		return v.String()
+	case big.Int:
+		return v.String()
+	case []byte:
+		return "0x" + hex.EncodeToString(v)
+	case [32]byte:
+		return "0x" + hex.EncodeToString(v[:])
+	}
+	rv := reflect.ValueOf(value)
+	for rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return nil
+		}
+		rv = rv.Elem()
+	}
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Array:
+		result := make([]interface{}, 0, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			result = append(result, normalizeABIValue(rv.Index(i).Interface()))
+		}
+		return result
+	case reflect.Struct:
+		rt := rv.Type()
+		result := make(map[string]interface{}, rv.NumField())
+		for i := 0; i < rv.NumField(); i++ {
+			field := rt.Field(i)
+			if field.PkgPath != "" {
+				continue
+			}
+			name := field.Tag.Get("abi")
+			if name == "" {
+				name = lowerFirst(field.Name)
+			}
+			result[name] = normalizeABIValue(rv.Field(i).Interface())
+		}
+		return result
+	case reflect.Map:
+		result := map[string]interface{}{}
+		iter := rv.MapRange()
+		for iter.Next() {
+			result[fmt.Sprintf("%v", iter.Key().Interface())] = normalizeABIValue(iter.Value().Interface())
+		}
+		return result
+	default:
+		return fmt.Sprintf("%v", value)
+	}
+}
+
+func determineChainEventType(eventName, contractCode string) string {
+	switch strings.ToLower(eventName) {
+	case "mint":
+		return "RT_MINT"
+	case "burn":
+		return "RT_BURN"
+	case "onrampevent":
+		return "RT_ON_RAMP"
+	case "encashsuspenseaccountreceived":
+		return "RT_ENCASH_SUSPENSE"
+	case "encashevent":
+		return "RT_ENCASH"
+	case "offrampevent":
+		return "RT_OFF_RAMP"
+	case "permissionset":
+		return "USER_PERMISSION_SET"
+	case "createtrade":
+		return "RT_SEND_CREATE"
+	case "conditionaccept":
+		return "RT_SEND_CONDITION_ACCEPT"
+	case "conditionreject":
+		return "RT_SEND_CONDITION_REJECT"
+	case "conditionpartialaccept":
+		return "RT_SEND_CONDITION_PARTIAL_ACCEPT"
+	case "conditionsetdate":
+		return "RT_SEND_CONDITION_SET_DATE"
+	case "settletrade":
+		return "RT_SEND_SETTLE"
+	case "sendsuspenseaccountreceived":
+		return "RT_SEND_SUSPENSE"
+	case "rorconvert":
+		return "ROR_CONVERT"
+	case "rorsendmint":
+		return "ROR_SEND_MINT"
+	case "rorsplit":
+		return "ROR_SPLIT"
+	case "rorsendrelationchange":
+		return "ROR_SEND_RELATION_CHANGE"
+	case "rortransferstatuschange":
+		return "ROR_TRANSFER_STATUS_CHANGE"
+	case "transfer":
+		if strings.Contains(strings.ToUpper(contractCode), "ERC721") {
+			return "ROR_TRANSFER"
+		}
+		if strings.Contains(strings.ToUpper(contractCode), "ERC20") {
+			return "RT_TRANSFER"
+		}
+	}
+	return eventName
+}
+
+func transformEventData(eventType string, contract *models.ContractInfo, raw string) string {
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return raw
+	}
+
+	var transformed interface{}
+	switch eventType {
+	case "RT_TRANSFER":
+		transformed = map[string]interface{}{
+			"tokenCode":    contract.Code,
+			"tokenAddress": lowerString(payload["contractAddr"]),
+			"from":         lowerString(payload["from"]),
+			"to":           lowerString(payload["to"]),
+			"amount":       decimalString(payload["value"]),
+		}
+	case "ROR_TRANSFER":
+		transformed = map[string]interface{}{
+			"tokenAddress": lowerString(payload["contractAddr"]),
+			"from":         lowerString(payload["from"]),
+			"to":           lowerString(payload["to"]),
+			"tokenId":      decimalString(firstNonNil(payload["tokenId"], payload["value"])),
+		}
+	case "RT_MINT":
+		transformed = map[string]interface{}{
+			"bid":       stringValue(firstNonNil(payload["txID"], payload["bid"], payload["businessId"])),
+			"tokenCode": contract.Code,
+			"recipient": lowerString(firstNonNil(payload["recipient"], payload["to"])),
+			"amount":    decimalString(firstNonNil(payload["amount"], payload["value"])),
+		}
+	case "RT_BURN":
+		transformed = map[string]interface{}{
+			"bid":       stringValue(firstNonNil(payload["txID"], payload["bid"], payload["businessId"])),
+			"tokenCode": contract.Code,
+			"owner":     lowerString(firstNonNil(payload["owner"], payload["from"])),
+			"amount":    decimalString(firstNonNil(payload["amount"], payload["value"])),
+		}
+	case "RT_ON_RAMP":
+		transformed = map[string]interface{}{
+			"bid":          stringValue(payload["bid"]),
+			"tokenAddress": lowerString(firstNonNil(payload["tokenAddress"], payload["contractAddr"])),
+			"tokenCode":    contract.Code,
+			"requester":    lowerString(payload["requester"]),
+			"value":        decimalString(firstNonNil(payload["value"], payload["amount"])),
+			"state":        stringValue(payload["state"]),
+			"extension":    stringValue(payload["extension"]),
+		}
+	case "RT_OFF_RAMP", "RT_ENCASH":
+		transformed = map[string]interface{}{
+			"bid":             stringValue(payload["bid"]),
+			"tokenCode":       contract.Code,
+			"tokenAddress":    lowerString(firstNonNil(payload["tokenAddress"], payload["contractAddr"])),
+			"contractAddress": lowerString(payload["contractAddr"]),
+			"encasher":        lowerString(firstNonNil(payload["requester"], payload["encasher"])),
+			"amount":          decimalString(firstNonNil(payload["value"], payload["amount"])),
+			"encashStatus":    stringValue(firstNonNil(payload["state"], payload["encashStatus"])),
+			"extension":       stringValue(payload["extension"]),
+		}
+	case "RT_SEND_SETTLE":
+		status := decimalString(payload["status"])
+		settleStatus := status
+		if status == "1" {
+			settleStatus = "SEND"
+		} else if status == "2" {
+			settleStatus = "REFUND"
+		}
+		transformed = map[string]interface{}{
+			"bid":       stringValue(firstNonNil(payload["businessId"], payload["bid"])),
+			"status":    settleStatus,
+			"extension": stringValue(payload["extension"]),
+		}
+	case "RT_SEND_CREATE":
+		transformed = map[string]interface{}{
+			"bid":                  stringValue(firstNonNil(payload["businessId"], payload["bid"])),
+			"tokenCode":            contract.Code,
+			"tokenAddress":         lowerString(payload["tokenAddress"]),
+			"sendContractAddress":  lowerString(payload["contractAddr"]),
+			"creator":              lowerString(payload["creator"]),
+			"receiver":             lowerString(payload["receiver"]),
+			"value":                decimalString(firstNonNil(payload["tokenAmount"], payload["value"])),
+			"timeScId":             stringValue(payload["timeScId"]),
+			"conditionSetId":       stringValue(firstNonNil(payload["conditionSetId"], payload["csId"])),
+			"parentBusinessId":     stringValue(payload["parentBusinessId"]),
+			"partialAcceptEnable":  boolValue(payload["partialAcceptEnable"]),
+			"partialAcceptAddress": lowerString(payload["partialAcceptAddress"]),
+			"partialAcceptScId":    stringValue(payload["partialAcceptScId"]),
+			"scSet":                convertSingleConditions(payload["scSet"]),
+			"csSet":                convertConditionSets(firstNonNil(payload["csSet"], payload["css"])),
+			"extension":            stringValue(payload["extension"]),
+		}
+	case "RT_SEND_CONDITION_ACCEPT", "RT_SEND_CONDITION_REJECT":
+		transformed = map[string]interface{}{
+			"bid":          stringValue(firstNonNil(payload["businessId"], payload["bid"])),
+			"scId":         stringValue(payload["scId"]),
+			"commentsHash": stringValue(payload["commentsHash"]),
+			"filesHash":    stringSlice(payload["filesHash"]),
+			"extension":    stringValue(payload["extension"]),
+		}
+	case "RT_SEND_CONDITION_PARTIAL_ACCEPT":
+		transformed = map[string]interface{}{
+			"bid":             stringValue(firstNonNil(payload["businessId"], payload["bid"])),
+			"subTradeId":      stringValue(firstNonNil(payload["subBusinessId"], payload["subTradeId"])),
+			"acceptedAmount":  decimalString(payload["acceptedAmount"]),
+			"remainingAmount": decimalString(payload["remainingAmount"]),
+			"extension":       stringValue(payload["extension"]),
+		}
+	case "RT_SEND_CONDITION_SET_DATE":
+		transformed = map[string]interface{}{
+			"bid":          stringValue(firstNonNil(payload["businessId"], payload["bid"])),
+			"scId":         stringValue(payload["scId"]),
+			"setValue":     stringValue(payload["setValue"]),
+			"commentsHash": stringValue(payload["commentsHash"]),
+			"filesHash":    stringSlice(payload["filesHash"]),
+			"extension":    stringValue(payload["extension"]),
+		}
+	case "RT_SEND_SUSPENSE":
+		transformed = map[string]interface{}{
+			"bid":                stringValue(firstNonNil(payload["businessID"], payload["businessId"], payload["bid"])),
+			"tokenCode":          contract.Code,
+			"receiverAddress":    lowerString(payload["receiverAddress"]),
+			"receiverPermission": decimalString(payload["receiverPermission"]),
+			"value":              decimalString(firstNonNil(payload["amount"], payload["value"])),
+			"reason":             stringValue(payload["reason"]),
+			"extension":          stringValue(payload["extension"]),
+		}
+	case "RT_ENCASH_SUSPENSE":
+		transformed = map[string]interface{}{
+			"bid":                stringValue(firstNonNil(payload["businessID"], payload["businessId"], payload["bid"])),
+			"tokenCode":          contract.Code,
+			"receiver":           lowerString(firstNonNil(payload["receiverAddress"], payload["receiver"])),
+			"receiverPermission": decimalString(payload["receiverPermission"]),
+			"amount":             decimalString(firstNonNil(payload["amount"], payload["value"])),
+			"reason":             stringValue(payload["reason"]),
+		}
+	case "ROR_CONVERT":
+		transformed = map[string]interface{}{
+			"bid":                lowerString(firstNonNil(payload["contractAddr"], payload["rorAddress"], payload["bid"])),
+			"rorContractAddress": lowerString(firstNonNil(payload["rorAddress"], payload["contractAddr"])),
+			"rorId":              decimalString(payload["rorId"]),
+			"ownerAddress":       lowerString(firstNonNil(payload["owner"], payload["ownerAddress"])),
+			"dttAddress":         lowerString(payload["dttAddress"]),
+			"settleStatus":       decimalString(payload["settleStatus"]),
+			"extension":          stringValue(payload["extension"]),
+		}
+	case "ROR_SEND_MINT":
+		transformed = map[string]interface{}{
+			"bid":                stringValue(firstNonNil(payload["sendRefId"], payload["bid"])),
+			"rorContractAddress": lowerString(firstNonNil(payload["rorAddress"], payload["contractAddr"])),
+			"rorId":              decimalString(payload["rorId"]),
+			"ownerAddress":       lowerString(firstNonNil(payload["owner"], payload["ownerAddress"])),
+			"rorValue":           decimalString(firstNonNil(payload["value"], payload["rorValue"])),
+			"startAmountLine":    decimalString(payload["startAmountLine"]),
+			"endAmountLine":      decimalString(payload["endAmountLine"]),
+			"extension":          stringValue(payload["extension"]),
+		}
+	case "ROR_SPLIT":
+		transformed = map[string]interface{}{
+			"bid":                lowerString(firstNonNil(payload["rorAddress"], payload["contractAddr"], payload["bid"])),
+			"rorContractAddress": lowerString(firstNonNil(payload["rorAddress"], payload["contractAddr"])),
+			"rorId":              decimalString(payload["rorId"]),
+			"ownerAddress":       lowerString(firstNonNil(payload["rorOwner"], payload["ownerAddress"])),
+			"rorValue":           decimalString(payload["rorValue"]),
+			"splitRorId":         decimalString(payload["splitRorId"]),
+			"splitRorValue":      decimalString(payload["splitRorValue"]),
+			"remainRorId":        decimalString(payload["remainRorId"]),
+			"remainRorValue":     decimalString(payload["remainRorValue"]),
+			"splitType":          decimalString(payload["splitType"]),
+			"extension":          stringValue(payload["extension"]),
+		}
+	case "ROR_SEND_RELATION_CHANGE":
+		transformed = map[string]interface{}{
+			"bid":                lowerString(firstNonNil(payload["rorAddress"], payload["contractAddr"], payload["bid"])),
+			"rorContractAddress": lowerString(firstNonNil(payload["rorAddress"], payload["contractAddr"])),
+			"rorId":              decimalString(payload["rorId"]),
+			"oldSendRefId":       stringValue(payload["oldSendRefId"]),
+			"newSendRefId":       stringValue(payload["newSendRefId"]),
+			"extension":          stringValue(payload["extension"]),
+		}
+	case "ROR_TRANSFER_STATUS_CHANGE":
+		transformed = map[string]interface{}{
+			"bid":                  stringValue(firstNonNil(payload["transferRefId"], payload["bid"])),
+			"rorContractAddress":   lowerString(firstNonNil(payload["rorAddress"], payload["contractAddr"])),
+			"rorId":                decimalString(payload["rorId"]),
+			"fromAddress":          lowerString(firstNonNil(payload["from"], payload["fromAddress"])),
+			"toAddress":            lowerString(firstNonNil(payload["to"], payload["toAddress"])),
+			"considerationType":    decimalString(payload["considerationType"]),
+			"considerationAddress": lowerString(firstNonNil(payload["considerationAddress"], payload["considerationDttAddr"])),
+			"considerationValue":   decimalString(firstNonNil(payload["considerationValue"], payload["considerationAmount"])),
+			"transferStatus":       decimalString(payload["transferStatus"]),
+			"extension":            stringValue(payload["extension"]),
+		}
+	default:
+		return raw
+	}
+
+	out, err := json.Marshal(transformed)
+	if err != nil {
+		return raw
+	}
+	return string(out)
+}
+
+func convertSingleConditions(value interface{}) []map[string]interface{} {
+	items := interfaceSlice(value)
+	result := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		m := mapValue(item)
+		if len(m) == 0 {
+			continue
+		}
+		result = append(result, map[string]interface{}{
+			"id":             stringValue(m["id"]),
+			"conditionType":  stringValue(m["conditionType"]),
+			"description":    stringValue(m["description"]),
+			"fixFactors":     convertConditionFactors(firstNonNil(m["fixFactors"], m["fixFactorList"])),
+			"dynamicFactors": convertConditionFactors(firstNonNil(m["dynamicFactors"], m["dynamicFactorList"])),
+		})
+	}
+	return result
+}
+
+func convertConditionFactors(value interface{}) []map[string]interface{} {
+	items := interfaceSlice(value)
+	result := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		m := mapValue(item)
+		if len(m) == 0 {
+			continue
+		}
+		result = append(result, map[string]interface{}{
+			"name":                stringValue(m["name"]),
+			"value":               stringValue(m["value"]),
+			"changeFlag":          boolValue(m["changeFlag"]),
+			"changeable":          boolValue(firstNonNil(m["changeAble"], m["changeable"])),
+			"changeAddress":       lowerString(firstNonNil(m["changeAddr"], m["changeAddress"])),
+			"changeDurationStart": uint64Value(firstNonNil(m["beginTime"], m["changeDurationStart"])),
+			"changeDurationEnd":   uint64Value(firstNonNil(m["endTime"], m["changeDurationEnd"])),
+			"commentsHash":        stringValue(m["commentsHash"]),
+			"filesHash":           stringSlice(m["filesHash"]),
+		})
+	}
+	return result
+}
+
+func convertConditionSets(value interface{}) []map[string]interface{} {
+	items := interfaceSlice(value)
+	result := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		m := mapValue(item)
+		if len(m) == 0 {
+			continue
+		}
+		join := decimalString(firstNonNil(m["join"], m["joinType"]))
+		joinType := join
+		if join == "0" {
+			joinType = "AND"
+		} else if join == "1" {
+			joinType = "OR"
+		}
+		result = append(result, map[string]interface{}{
+			"id":       stringValue(m["id"]),
+			"scIds":    stringSlice(firstNonNil(m["scIDs"], m["scIds"])),
+			"csIds":    stringSlice(firstNonNil(m["csIDs"], m["csIds"])),
+			"joinType": joinType,
+		})
+	}
+	return result
+}
+
+func interfaceSlice(value interface{}) []interface{} {
+	switch v := value.(type) {
+	case []interface{}:
+		return v
+	default:
+		return []interface{}{}
+	}
+}
+
+func mapValue(value interface{}) map[string]interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return v
+	default:
+		return map[string]interface{}{}
+	}
+}
+
+func stringSlice(value interface{}) []string {
+	items := interfaceSlice(value)
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		result = append(result, stringValue(item))
+	}
+	return result
+}
+
+func firstNonNil(values ...interface{}) interface{} {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func lowerString(value interface{}) string {
+	return strings.ToLower(stringValue(value))
+}
+
+func stringValue(value interface{}) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	default:
+		return fmt.Sprintf("%v", value)
+	}
+}
+
+func decimalString(value interface{}) string {
+	return stringValue(value)
+}
+
+func boolValue(value interface{}) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(v, "true")
+	default:
+		return false
+	}
+}
+
+func uint64Value(value interface{}) uint64 {
+	switch v := value.(type) {
+	case float64:
+		return uint64(v)
+	case string:
+		b, ok := new(big.Int).SetString(v, 10)
+		if ok {
+			return b.Uint64()
+		}
+	}
+	return 0
+}
+
+func lowerFirst(value string) string {
+	if value == "" {
+		return value
+	}
+	return strings.ToLower(value[:1]) + value[1:]
+}

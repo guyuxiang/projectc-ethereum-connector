@@ -10,12 +10,27 @@ auth:
   username: "test"
   password: "test"
 mysql:
-  dsn: "root:password@tcp(127.0.0.1:3306)/gin_apiserver?charset=utf8mb4&parseTime=True&loc=Local"
+  dsn: ""
   maxIdleConns: 10
   maxOpenConns: 20
 rabbitmq:
-  url: "amqp://guest:guest@127.0.0.1:5672/"
+  url: ""
   exchange: "projectc-ethereum-connector.exchange"
   exchangeType: "direct"
   queue: "projectc-ethereum-connector.queue"
   routingKey: "projectc-ethereum-connector.queue"
+  txCallbackExchange: "tx_callback_fanout_exchange"
+  txCallbackExchangeType: "fanout"
+  txCallbackCancelExchange: "tx_callback_cancel_fanout_exchange"
+  txCallbackCancelExchangeType: "fanout"
+connector:
+  requireAuthOnBusiness: true
+  wallets: []
+  onchains: []
+ethereum:
+  networks:
+    - code: "sepolia"
+      rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com"
+      chainId: 11155111
+      blockchainExplorerUrl: "https://sepolia.etherscan.io"
+  contracts: []

@@ -1,0 +1,517 @@
+package service
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"math/big"
+	"strings"
+	"time"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/guyuxiang/projectc-ethereum-connector/pkg/config"
+	"github.com/guyuxiang/projectc-ethereum-connector/pkg/models"
+	"github.com/guyuxiang/projectc-ethereum-connector/pkg/mysql"
+	"github.com/guyuxiang/projectc-ethereum-connector/pkg/rabbitmq"
+	"github.com/guyuxiang/projectc-ethereum-connector/pkg/store"
+)
+
+type SubscriptionService interface {
+	AddTx(networkCode string, req models.TxSubscribeRequest)
+	RemoveTx(networkCode, txCode string)
+	AddAddress(networkCode string, req models.AddressSubscribeRequest)
+	RemoveAddress(networkCode string, req models.AddressSubscribeCancelRequest)
+	Refresh(ctx context.Context) error
+}
+
+type subscriptionService struct {
+	eth EthereumService
+}
+
+func NewSubscriptionService(eth EthereumService) SubscriptionService {
+	return &subscriptionService{eth: eth}
+}
+
+func (s *subscriptionService) AddTx(networkCode string, req models.TxSubscribeRequest) {
+	if mysql.DB() == nil {
+		return
+	}
+	code := fmt.Sprintf("%s_%s", networkCode, req.TxCode)
+	row := store.TxSubscriptionPO{
+		Code:         code,
+		TxCode:       req.TxCode,
+		NetworkCode:  networkCode,
+		EndTimestamp: req.SubscribeRange.EndTimestamp,
+		Status:       "ACTIVE",
+	}
+	mysql.DB().Where("code = ?", code).Assign(row).FirstOrCreate(&row)
+}
+
+func (s *subscriptionService) RemoveTx(networkCode, txCode string) {
+	if mysql.DB() == nil {
+		return
+	}
+	mysql.DB().Model(&store.TxSubscriptionPO{}).Where("network_code = ? and tx_code = ?", networkCode, txCode).Update("status", "CANCELLED")
+}
+
+func (s *subscriptionService) AddAddress(networkCode string, req models.AddressSubscribeRequest) {
+	if mysql.DB() == nil {
+		return
+	}
+	code := fmt.Sprintf("%s_%s", networkCode, req.Address)
+	row := store.AddressSubscriptionPO{
+		Code:             code,
+		Address:          req.Address,
+		NetworkCode:      networkCode,
+		StartBlockNumber: req.SubscribeRange.StartBlockNumber,
+		EndBlockNumber:   req.SubscribeRange.EndBlockNumber,
+		NextBlockNumber:  req.SubscribeRange.StartBlockNumber,
+		Status:           "ACTIVE",
+	}
+	mysql.DB().Where("code = ?", code).Assign(map[string]interface{}{
+		"end_block_number": req.SubscribeRange.EndBlockNumber,
+		"status":           "ACTIVE",
+	}).FirstOrCreate(&row)
+}
+
+func (s *subscriptionService) RemoveAddress(networkCode string, req models.AddressSubscribeCancelRequest) {
+	if mysql.DB() == nil {
+		return
+	}
+	mysql.DB().Model(&store.AddressSubscriptionPO{}).
+		Where("network_code = ? and address = ?", networkCode, req.Address).
+		Updates(map[string]interface{}{"end_block_number": req.EndBlockNumber, "status": "ACTIVE"})
+}
+
+func (s *subscriptionService) Refresh(ctx context.Context) error {
+	if mysql.DB() == nil {
+		return nil
+	}
+	if err := s.expireTxSubscriptions(); err != nil {
+		return err
+	}
+	if err := s.refreshAddressSubscriptions(ctx); err != nil {
+		return err
+	}
+	if err := s.refreshTxSubscriptions(ctx); err != nil {
+		return err
+	}
+	if err := s.retryTxCallbacks(ctx); err != nil {
+		return err
+	}
+	if err := s.checkTxCallbacks(ctx); err != nil {
+		return err
+	}
+	return s.checkAddressSyncs(ctx)
+}
+
+func (s *subscriptionService) refreshTxSubscriptions(ctx context.Context) error {
+	var rows []store.TxSubscriptionPO
+	if err := mysql.DB().Where("status = ? and end_timestamp >= ?", "ACTIVE", time.Now().UnixMilli()).Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		resp, err := s.eth.QueryTransaction(ctx, row.NetworkCode, row.TxCode)
+		if err != nil || resp == nil || !resp.IfTxOnchain || resp.Tx == nil || resp.Tx.BlockNumber == 0 {
+			continue
+		}
+		payload, _ := json.Marshal(map[string]interface{}{
+			"tx":       resp.Tx,
+			"txEvents": resp.TxEvents,
+		})
+		payloadHash := hashPayload(payload)
+		record := store.TxCallbackRecordPO{
+			Code:              row.Code,
+			TxCode:            row.TxCode,
+			NetworkCode:       row.NetworkCode,
+			Payload:           string(payload),
+			PayloadHash:       payloadHash,
+			Status:            "PENDING",
+			CheckStatus:       "WAITING",
+			ConfirmBlockCount: defaultTxConfirmBlockCount,
+			NextRetryAt:       time.Now().UnixMilli(),
+		}
+		var existing store.TxCallbackRecordPO
+		callbackExists := mysql.DB().Where("code = ?", record.Code).First(&existing).Error == nil
+		if callbackExists {
+			continue
+		}
+		if err = mysql.DB().Create(&record).Error; err != nil {
+			continue
+		}
+		if err = deliverTxCallback(&record); err == nil {
+			row.Status = "COMPLETED"
+			_ = mysql.DB().Save(&row).Error
+		}
+		_ = mysql.DB().Save(&record).Error
+	}
+	return nil
+}
+
+func (s *subscriptionService) expireTxSubscriptions() error {
+	return mysql.DB().
+		Model(&store.TxSubscriptionPO{}).
+		Where("status = ? and end_timestamp < ?", "ACTIVE", time.Now().UnixMilli()).
+		Update("status", "EXPIRED").Error
+}
+
+func (s *subscriptionService) retryTxCallbacks(ctx context.Context) error {
+	var rows []store.TxCallbackRecordPO
+	if err := mysql.DB().
+		Where("status = ? and next_retry_at <= ?", "PENDING", time.Now().UnixMilli()).
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		_ = ctx
+		_ = deliverTxCallback(&row)
+		_ = mysql.DB().Save(&row).Error
+	}
+	return nil
+}
+
+func (s *subscriptionService) checkTxCallbacks(ctx context.Context) error {
+	var rows []store.TxCallbackRecordPO
+	if err := mysql.DB().
+		Where("status = ? and check_status = ?", "DELIVERED", "WAITING").
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		resp, err := s.eth.QueryTransaction(ctx, row.NetworkCode, row.TxCode)
+		if err != nil {
+			continue
+		}
+		latest, latestErr := s.eth.GetLatestBlock(ctx, row.NetworkCode)
+		if latestErr != nil || latest == nil {
+			continue
+		}
+		if resp == nil || !resp.IfTxOnchain || resp.Tx == nil {
+			row.Status = "CANCELLED"
+			row.CheckStatus = "DONE"
+			row.LastError = "transaction not found during callback check"
+			cancelPayload, _ := json.Marshal(map[string]interface{}{
+				"cancelled": true,
+				"tx":        map[string]interface{}{"code": row.TxCode, "networkCode": row.NetworkCode},
+			})
+			_ = publishCancelCallback(cancelPayload)
+			_ = mysql.DB().Save(&row).Error
+			continue
+		}
+		if latest.BlockNumber < resp.Tx.BlockNumber+row.ConfirmBlockCount {
+			continue
+		}
+		payload, _ := json.Marshal(map[string]interface{}{
+			"tx":       resp.Tx,
+			"txEvents": resp.TxEvents,
+		})
+		payloadHash := hashPayload(payload)
+		if payloadHash != row.PayloadHash {
+			row.Payload = string(payload)
+			row.PayloadHash = payloadHash
+			row.Status = "PENDING"
+			row.NextRetryAt = time.Now().UnixMilli()
+			row.LastError = "payload changed after confirmation check"
+			_ = deliverTxCallback(&row)
+			_ = mysql.DB().Save(&row).Error
+			continue
+		}
+		row.CheckStatus = "DONE"
+		row.LastError = ""
+		_ = mysql.DB().Save(&row).Error
+	}
+	return nil
+}
+
+func (s *subscriptionService) refreshAddressSubscriptions(ctx context.Context) error {
+	var rows []store.AddressSubscriptionPO
+	if err := mysql.DB().Where("status = ?", "ACTIVE").Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		network, err := findNetworkConfig(row.NetworkCode)
+		if err != nil {
+			continue
+		}
+		client, err := ethclient.DialContext(ctx, network.RPCURL)
+		if err != nil {
+			continue
+		}
+		latest, err := client.BlockNumber(ctx)
+		if err != nil {
+			client.Close()
+			continue
+		}
+		end := row.EndBlockNumber
+		if end > latest {
+			end = latest
+		}
+		nextEnd := row.NextBlockNumber + 100
+		if nextEnd > end {
+			nextEnd = end
+		}
+		target := common.HexToAddress(row.Address)
+		discoveredTxCodes := make(map[string]struct{})
+		for blockNum := row.NextBlockNumber; blockNum <= nextEnd; blockNum++ {
+			block, blockErr := client.BlockByNumber(ctx, bigIntFromUint64(blockNum))
+			if blockErr != nil {
+				continue
+			}
+			for _, tx := range block.Transactions() {
+				receipt, receiptErr := client.TransactionReceipt(ctx, tx.Hash())
+				if receiptErr != nil {
+					continue
+				}
+				signer := latestSignerForBlock(tx.ChainId())
+				from, signErr := signer.Sender(tx)
+				if signErr != nil {
+					continue
+				}
+				var to common.Address
+				if tx.To() != nil {
+					to = *tx.To()
+				}
+				if from == target || to == target || receiptMatchesAddress(receipt, target) {
+					discoveredTxCodes[tx.Hash().Hex()] = struct{}{}
+					s.AddTx(row.NetworkCode, models.TxSubscribeRequest{
+						TxCode: tx.Hash().Hex(),
+						SubscribeRange: models.TxSubscribeRange{
+							EndTimestamp: time.Now().Add(24 * time.Hour).UnixMilli(),
+						},
+					})
+				}
+			}
+		}
+		client.Close()
+		if nextEnd >= row.NextBlockNumber {
+			s.createAddressSyncWaitingCheck(row.NetworkCode, row.Address, row.NextBlockNumber, nextEnd, discoveredTxCodes)
+		}
+		if nextEnd >= end {
+			row.Status = "COMPLETED"
+		}
+		if nextEnd < row.NextBlockNumber {
+			row.Status = "COMPLETED"
+		} else {
+			row.NextBlockNumber = nextEnd + 1
+		}
+		_ = mysql.DB().Save(&row).Error
+	}
+	return nil
+}
+
+func bigIntFromUint64(v uint64) *big.Int {
+	return new(big.Int).SetUint64(v)
+}
+
+func latestSignerForBlock(chainID *big.Int) types.Signer {
+	return types.LatestSignerForChainID(chainID)
+}
+
+var erc20TransferTopic = common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
+
+func receiptMatchesAddress(receipt *types.Receipt, target common.Address) bool {
+	if receipt == nil {
+		return false
+	}
+	targetHash := common.BytesToHash(common.LeftPadBytes(target.Bytes(), 32))
+	for _, logEntry := range receipt.Logs {
+		if logEntry == nil {
+			continue
+		}
+		if logEntry.Address == target {
+			return true
+		}
+		if len(logEntry.Topics) >= 3 && logEntry.Topics[0] == erc20TransferTopic {
+			if logEntry.Topics[1] == targetHash || logEntry.Topics[2] == targetHash {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (s *subscriptionService) createAddressSyncWaitingCheck(networkCode, address string, startBlock, endBlock uint64, txCodes map[string]struct{}) {
+	if mysql.DB() == nil || endBlock < startBlock {
+		return
+	}
+	addresses, _ := json.Marshal([]string{strings.ToLower(address)})
+	txCodeList := make([]string, 0, len(txCodes))
+	for txCode := range txCodes {
+		txCodeList = append(txCodeList, txCode)
+	}
+	txPayload, _ := json.Marshal(txCodeList)
+	code := fmt.Sprintf("%s_%d_%d_%s", networkCode, startBlock, endBlock, strings.ToLower(address))
+	row := store.AddressSyncWaitingCheckPO{
+		Code:              code,
+		NetworkCode:       networkCode,
+		StartBlockNumber:  startBlock,
+		EndBlockNumber:    endBlock,
+		AddressSet:        string(addresses),
+		TxCodeSet:         string(txPayload),
+		CheckStatus:       "WAITING",
+		ConfirmBlockCount: defaultAddressConfirmBlockCount,
+	}
+	mysql.DB().Where("code = ?", code).Assign(map[string]interface{}{
+		"network_code":        row.NetworkCode,
+		"start_block_number":  row.StartBlockNumber,
+		"end_block_number":    row.EndBlockNumber,
+		"address_set":         row.AddressSet,
+		"tx_code_set":         row.TxCodeSet,
+		"check_status":        row.CheckStatus,
+		"confirm_block_count": row.ConfirmBlockCount,
+	}).FirstOrCreate(&row)
+}
+
+func (s *subscriptionService) checkAddressSyncs(ctx context.Context) error {
+	var rows []store.AddressSyncWaitingCheckPO
+	if err := mysql.DB().Where("check_status = ?", "WAITING").Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		latest, err := s.eth.GetLatestBlock(ctx, row.NetworkCode)
+		if err != nil || latest == nil {
+			continue
+		}
+		if latest.BlockNumber < row.EndBlockNumber+row.ConfirmBlockCount {
+			continue
+		}
+
+		addresses := decodeJSONStringArray(row.AddressSet)
+		existing := stringSetFromSlice(decodeJSONStringArray(row.TxCodeSet))
+		latestSet, scanErr := s.scanAddressTxs(ctx, row.NetworkCode, addresses, row.StartBlockNumber, row.EndBlockNumber)
+		if scanErr != nil {
+			continue
+		}
+		for txCode := range latestSet {
+			if _, ok := existing[txCode]; ok {
+				continue
+			}
+			s.AddTx(row.NetworkCode, models.TxSubscribeRequest{
+				TxCode: txCode,
+				SubscribeRange: models.TxSubscribeRange{
+					EndTimestamp: time.Now().Add(24 * time.Hour).UnixMilli(),
+				},
+			})
+		}
+		row.CheckStatus = "DONE"
+		_ = mysql.DB().Save(&row).Error
+	}
+	return nil
+}
+
+func (s *subscriptionService) scanAddressTxs(ctx context.Context, networkCode string, addresses []string, startBlock, endBlock uint64) (map[string]struct{}, error) {
+	result := make(map[string]struct{})
+	if len(addresses) == 0 || endBlock < startBlock {
+		return result, nil
+	}
+	network, err := findNetworkConfig(networkCode)
+	if err != nil {
+		return nil, err
+	}
+	client, err := ethclient.DialContext(ctx, network.RPCURL)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+
+	targets := make([]common.Address, 0, len(addresses))
+	for _, address := range addresses {
+		targets = append(targets, common.HexToAddress(address))
+	}
+	for blockNum := startBlock; blockNum <= endBlock; blockNum++ {
+		block, blockErr := client.BlockByNumber(ctx, bigIntFromUint64(blockNum))
+		if blockErr != nil {
+			continue
+		}
+		for _, tx := range block.Transactions() {
+			receipt, receiptErr := client.TransactionReceipt(ctx, tx.Hash())
+			if receiptErr != nil {
+				continue
+			}
+			signer := latestSignerForBlock(tx.ChainId())
+			from, signErr := signer.Sender(tx)
+			if signErr != nil {
+				continue
+			}
+			var to common.Address
+			if tx.To() != nil {
+				to = *tx.To()
+			}
+			for _, target := range targets {
+				if from == target || to == target || receiptMatchesAddress(receipt, target) {
+					result[tx.Hash().Hex()] = struct{}{}
+					break
+				}
+			}
+		}
+	}
+	return result, nil
+}
+
+func decodeJSONStringArray(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var items []string
+	if err := json.Unmarshal([]byte(raw), &items); err != nil {
+		return nil
+	}
+	return items
+}
+
+func stringSetFromSlice(values []string) map[string]struct{} {
+	result := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		result[value] = struct{}{}
+	}
+	return result
+}
+
+const defaultTxConfirmBlockCount = 3
+const defaultAddressConfirmBlockCount = 3
+
+func deliverTxCallback(row *store.TxCallbackRecordPO) error {
+	err := publishTxCallback([]byte(row.Payload))
+	if err != nil {
+		row.Status = "PENDING"
+		row.RetryCount++
+		row.NextRetryAt = time.Now().Add(backoffForRetry(row.RetryCount)).UnixMilli()
+		row.LastError = err.Error()
+		return err
+	}
+	row.Status = "DELIVERED"
+	row.NextRetryAt = 0
+	row.LastError = ""
+	return nil
+}
+
+func backoffForRetry(retryCount uint64) time.Duration {
+	if retryCount > 6 {
+		retryCount = 6
+	}
+	return time.Duration(1<<retryCount) * time.Minute
+}
+
+func hashPayload(payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func publishTxCallback(body []byte) error {
+	cfg := config.GetConfig()
+	if cfg.RabbitMQ != nil && cfg.RabbitMQ.TxCallbackExchange != "" {
+		return rabbitmq.PublishToWithType(cfg.RabbitMQ.TxCallbackExchange, cfg.RabbitMQ.TxCallbackExchangeType, "", body)
+	}
+	return rabbitmq.Publish(body)
+}
+
+func publishCancelCallback(body []byte) error {
+	cfg := config.GetConfig()
+	if cfg.RabbitMQ != nil && cfg.RabbitMQ.TxCallbackCancelExchange != "" {
+		return rabbitmq.PublishToWithType(cfg.RabbitMQ.TxCallbackCancelExchange, cfg.RabbitMQ.TxCallbackCancelExchangeType, "", body)
+	}
+	return rabbitmq.Publish(body)
+}

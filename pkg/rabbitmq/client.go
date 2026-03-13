@@ -63,6 +63,14 @@ func Channel() *amqp.Channel {
 }
 
 func Publish(body []byte) error {
+	return PublishTo("", "", body)
+}
+
+func PublishTo(exchange, routingKey string, body []byte) error {
+	return PublishToWithType(exchange, "", routingKey, body)
+}
+
+func PublishToWithType(exchange, exchangeType, routingKey string, body []byte) error {
 	mu.RLock()
 	localConn := conn
 	localCfg := cfg
@@ -82,13 +90,37 @@ func Publish(body []byte) error {
 		return err
 	}
 
+	targetExchange := localCfg.Exchange
+	if exchange != "" {
+		targetExchange = exchange
+		targetExchangeType := localCfg.ExchangeType
+		if exchangeType != "" {
+			targetExchangeType = exchangeType
+		}
+		if err = pubChannel.ExchangeDeclare(
+			targetExchange,
+			targetExchangeType,
+			true,
+			false,
+			false,
+			false,
+			nil,
+		); err != nil {
+			return err
+		}
+	}
+	targetRoutingKey := localCfg.RoutingKey
+	if routingKey != "" {
+		targetRoutingKey = routingKey
+	}
+
 	return pubChannel.Publish(
-		localCfg.Exchange,
-		localCfg.RoutingKey,
+		targetExchange,
+		targetRoutingKey,
 		false,
 		false,
 		amqp.Publishing{
-			ContentType: "application/octet-stream",
+			ContentType: "application/json",
 			Body:        body,
 		},
 	)

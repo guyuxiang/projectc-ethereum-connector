@@ -40,17 +40,43 @@ func InstallRoutes(r *gin.Engine) {
 		os.Exit(1)
 	})
 
-	rootGroup := r.Group("/api/v1")
-	// AuthRequired middleware that provide basic auth
-	rootGroup.Use(middleware.BasicAuthMiddleware())
+	secured := r.Group("/")
+	secured.Use(middleware.BasicAuthMiddleware())
 
-	{
-		// a ping api to test basic auth
-		rootGroup.GET("/ping", controller.Ping)
-	}
+	secured.GET("/api/v1/ping", controller.Ping)
 
-	{
-		toDoController := controller.NewToDoController()
-		rootGroup.GET("/todo/get", toDoController.GetToDo)
-	}
+	connectorController := controller.NewConnectorController()
+	connectorController.StartBackgroundLoop()
+
+	secured.POST("/inner/chain-invoke/:networkCode/common/tx-send", connectorController.TxSend)
+	secured.POST("/inner/chain-data/:networkCode/common/tx-query", connectorController.TxQuery)
+	secured.POST("/inner/chain-data/:networkCode/common/address-balance", connectorController.AddressBalance)
+	secured.POST("/inner/chain-data/:networkCode/common/latest-block", connectorController.LatestBlock)
+	secured.POST("/inner/chain-data/:networkCode/common/token-supply", connectorController.TokenSupply)
+	secured.POST("/inner/chain-data/:networkCode/common/token-balance", connectorController.TokenBalance)
+
+	secured.POST("/inner/chain-invoke/:networkCode/wallet/faucet", connectorController.Faucet)
+
+	secured.POST("/inner/chain-invoke/:networkCode/scplus/dtt-send-settle", connectorController.DttSendSettle)
+	secured.POST("/inner/chain-invoke/:networkCode/scplus/auto-reject", connectorController.AutoReject)
+	secured.POST("/inner/chain-invoke/:networkCode/scplus/instant-on-ramp", connectorController.InstantOnRamp)
+
+	secured.POST("/inner/chain-invoke/:networkCode/scplus/bridge/issue", connectorController.Issue)
+	secured.POST("/inner/chain-invoke/:networkCode/scplus/bridge/queryIssue", connectorController.QueryIssue)
+	secured.POST("/inner/chain-invoke/:networkCode/scplus/bridge/finance", connectorController.Finance)
+	secured.POST("/inner/chain-invoke/:networkCode/scplus/bridge/queryFinance", connectorController.QueryFinance)
+	secured.POST("/inner/chain-invoke/:networkCode/scplus/bridge/issueF", connectorController.IssueF)
+	secured.POST("/inner/chain-invoke/:networkCode/scplus/bridge/queryIssueF", connectorController.QueryIssueF)
+
+	secured.POST("/inner/chain-data-subscribe/:networkCode/tx-subscribe", connectorController.TxSubscribe)
+	secured.POST("/inner/chain-data-subscribe/:networkCode/address-subscribe", connectorController.AddressSubscribe)
+	secured.POST("/inner/chain-data-subscribe/:networkCode/tx-subscribe-cancel", connectorController.TxSubscribeCancel)
+	secured.POST("/inner/chain-data-subscribe/:networkCode/address-subscribe-cancel", connectorController.AddressSubscribeCancel)
+
+	secured.POST("/inner/contract/:networkCode/list", connectorController.ContractList)
+	secured.POST("/inner/contract/contract-config-push-record/push", connectorController.ContractPush)
+
+	secured.POST("/open/all-clients/contract/web3-contract-info", connectorController.Web3ContractInfo)
+	secured.POST("/open/ops-client/contract/contract-config-push-record/apply", connectorController.ContractPushApply)
+	secured.POST("/open/ops-client/contract/contract-config-push-record/page", connectorController.ContractPushPage)
 }
