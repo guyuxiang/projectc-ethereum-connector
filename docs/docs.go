@@ -624,7 +624,7 @@ const docTemplate = `{
         },
         "/inner/chain-invoke/{networkCode}/common/tx-send": {
             "post": {
-                "description": "Submit a signed raw EVM transaction to the configured network",
+                "description": "Submit either a signed raw EVM transaction or an ERC-4337 UserOperation to the configured RPC or bundler",
                 "consumes": [
                     "application/json"
                 ],
@@ -634,7 +634,7 @@ const docTemplate = `{
                 "tags": [
                     "Common"
                 ],
-                "summary": "Send raw transaction",
+                "summary": "Send transaction",
                 "parameters": [
                     {
                         "type": "string",
@@ -1075,8 +1075,19 @@ const docTemplate = `{
         "models.TxSendRequest": {
             "type": "object",
             "properties": {
+                "eip7702Auth": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "entryPoint": {
+                    "type": "string"
+                },
                 "txSignResult": {
                     "type": "string"
+                },
+                "userOperation": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             }
         },

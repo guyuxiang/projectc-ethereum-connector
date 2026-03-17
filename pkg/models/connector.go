@@ -6,11 +6,15 @@ import (
 )
 
 type TxSendRequest struct {
-	TxSignResult string `json:"txSignResult"`
+	TxSignResult  string                 `json:"txSignResult"`
+	EntryPoint    string                 `json:"entryPoint"`
+	UserOperation map[string]interface{} `json:"userOperation"`
+	EIP7702Auth   map[string]interface{} `json:"eip7702Auth"`
 }
 
 type TxSendResponse struct {
-	TxCode string `json:"txCode"`
+	TxCode     string `json:"txCode"`
+	TxCodeType string `json:"txCodeType"`
 }
 
 type TxQueryRequest struct {

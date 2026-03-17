@@ -21,7 +21,7 @@ import (
 )
 
 type EthereumService interface {
-	SendRawTransaction(ctx context.Context, signedTx string) (string, error)
+	SendTransaction(ctx context.Context, req models.TxSendRequest) (*models.TxSendResponse, error)
 	QueryTransaction(ctx context.Context, txHash string) (*models.TxQueryResponse, error)
 	QueryLogs(ctx context.Context, address string, fromBlock, toBlock uint64) ([]rpcLogRecord, error)
 	DecodeLogEvent(logEntry rpcLogRecord) (string, string, string)
@@ -48,7 +48,41 @@ func NewEthereumService(contracts ContractRegistryService, tokens TokenRegistryS
 	}
 }
 
-func (s *ethereumService) SendRawTransaction(ctx context.Context, signedTx string) (string, error) {
+func (s *ethereumService) SendTransaction(ctx context.Context, req models.TxSendRequest) (*models.TxSendResponse, error) {
+	if strings.TrimSpace(req.TxSignResult) != "" && len(req.UserOperation) > 0 {
+		return nil, errors.New("txSignResult and userOperation cannot be provided together")
+	}
+
+	switch {
+	case strings.TrimSpace(req.TxSignResult) != "":
+		txHash, err := s.sendRawTransaction(ctx, req.TxSignResult)
+		if err != nil {
+			return nil, err
+		}
+		return &models.TxSendResponse{
+			TxCode:     txHash,
+			TxCodeType: "txHash",
+		}, nil
+	case len(req.UserOperation) > 0:
+		userOpHash, err := s.sendUserOperation(ctx, req.UserOperation, req.EntryPoint, req.EIP7702Auth)
+		if err != nil {
+			return nil, err
+		}
+		return &models.TxSendResponse{
+			TxCode:     userOpHash,
+			TxCodeType: "userOpHash",
+		}, nil
+	default:
+		return nil, errors.New("either txSignResult or userOperation is required")
+	}
+}
+
+func (s *ethereumService) sendRawTransaction(ctx context.Context, signedTx string) (string, error) {
+	signedTx = strings.TrimSpace(signedTx)
+	if signedTx == "" {
+		return "", errors.New("txSignResult is required for rawTransaction")
+	}
+
 	var txHash string
 	if err := s.rpcCall(ctx, "eth_sendRawTransaction", []interface{}{signedTx}, &txHash); err != nil {
 		return "", err
@@ -56,13 +90,42 @@ func (s *ethereumService) SendRawTransaction(ctx context.Context, signedTx strin
 	return txHash, nil
 }
 
+func (s *ethereumService) sendUserOperation(ctx context.Context, userOperation map[string]interface{}, entryPoint string, eip7702Auth map[string]interface{}) (string, error) {
+	if len(userOperation) == 0 {
+		return "", errors.New("userOperation is required")
+	}
+	entryPoint = strings.TrimSpace(entryPoint)
+	if entryPoint == "" {
+		return "", errors.New("entryPoint is required")
+	}
+
+	params := []interface{}{userOperation, entryPoint}
+	if len(eip7702Auth) > 0 {
+		params = append(params, eip7702Auth)
+	}
+
+	var userOpHash string
+	if err := s.rpcCallToURL(ctx, s.bundlerURL(), "eth_sendUserOperation", params, &userOpHash); err != nil {
+		return "", err
+	}
+	return userOpHash, nil
+}
+
 func (s *ethereumService) QueryTransaction(ctx context.Context, txHash string) (*models.TxQueryResponse, error) {
+	resp, err := s.queryNativeTransaction(ctx, txHash)
+	if err == nil {
+		return resp, nil
+	}
+	if !errors.Is(err, errRPCNullResult) {
+		return nil, err
+	}
+	return s.queryUserOperation(ctx, txHash)
+}
+
+func (s *ethereumService) queryNativeTransaction(ctx context.Context, txHash string) (*models.TxQueryResponse, error) {
 	networkCode := s.network.Code
 	var tx rpcTransaction
 	if err := s.rpcCall(ctx, "eth_getTransactionByHash", []interface{}{txHash}, &tx); err != nil {
-		if errors.Is(err, errRPCNullResult) {
-			return &models.TxQueryResponse{IfTxOnchain: false}, nil
-		}
 		return nil, err
 	}
 
@@ -108,6 +171,74 @@ func (s *ethereumService) QueryTransaction(ctx context.Context, txHash string) (
 		result.TxEvents = append(result.TxEvents, models.ChainEvent{
 			Code:        fmt.Sprintf("%s:%d", tx.Hash, hexUint64(logEntry.LogIndex)),
 			NetworkCode: networkCode,
+			BlockNumber: hexUint64(logEntry.BlockNumber),
+			Timestamp:   blockTimestamp,
+			Fee:         result.Tx.Fee,
+			Type:        eventType,
+			DataType:    eventName,
+			LogIndex:    fmt.Sprintf("%d", hexUint64(logEntry.LogIndex)),
+			Data:        eventData,
+		})
+	}
+
+	return result, nil
+}
+
+func (s *ethereumService) queryUserOperation(ctx context.Context, userOpHash string) (*models.TxQueryResponse, error) {
+	var receipt rpcUserOperationReceipt
+	if err := s.rpcCallToURL(ctx, s.bundlerURL(), "eth_getUserOperationReceipt", []interface{}{userOpHash}, &receipt); err != nil {
+		if errors.Is(err, errRPCNullResult) {
+			var pending rpcUserOperationByHash
+			if pendingErr := s.rpcCallToURL(ctx, s.bundlerURL(), "eth_getUserOperationByHash", []interface{}{userOpHash}, &pending); pendingErr != nil {
+				if errors.Is(pendingErr, errRPCNullResult) {
+					return &models.TxQueryResponse{IfTxOnchain: false}, nil
+				}
+				return nil, pendingErr
+			}
+			return &models.TxQueryResponse{IfTxOnchain: false}, nil
+		}
+		return nil, err
+	}
+
+	blockTimestamp := uint64(0)
+	if receipt.Receipt.BlockNumber != "" {
+		block, err := s.getBlockByNumber(ctx, receipt.Receipt.BlockNumber)
+		if err == nil {
+			blockTimestamp = hexUint64(block.Timestamp) * 1000
+		}
+	}
+
+	status := "FAILED"
+	if receipt.Success || receipt.Receipt.Status == "" || receipt.Receipt.Status == "0x1" {
+		status = "SUCCESS"
+	}
+	fee := calcFee(receipt.Receipt.EffectiveGasPrice, receipt.Receipt.GasUsed)
+	if fee == "0" && receipt.ActualGasCost != "" {
+		fee = hexToBigIntString(receipt.ActualGasCost)
+	}
+
+	result := &models.TxQueryResponse{
+		IfTxOnchain: true,
+		Tx: &models.ChainTx{
+			Code:           userOpHash,
+			NetworkCode:    s.network.Code,
+			BlockNumber:    hexUint64(receipt.Receipt.BlockNumber),
+			Timestamp:      blockTimestamp,
+			Fee:            fee,
+			From:           receipt.Sender,
+			To:             receipt.Receipt.To,
+			Amount:         models.RawNumber("0"),
+			Status:         status,
+			SequenceNumber: fmt.Sprintf("%d", hexUint64(receipt.Nonce)),
+		},
+		TxEvents: make([]models.ChainEvent, 0, len(receipt.Logs)),
+	}
+
+	for _, logEntry := range receipt.Logs {
+		eventType, eventName, eventData := s.decodeLogEvent(s.network.Code, logEntry)
+		result.TxEvents = append(result.TxEvents, models.ChainEvent{
+			Code:        fmt.Sprintf("%s:%d", userOpHash, hexUint64(logEntry.LogIndex)),
+			NetworkCode: s.network.Code,
 			BlockNumber: hexUint64(logEntry.BlockNumber),
 			Timestamp:   blockTimestamp,
 			Fee:         result.Tx.Fee,
@@ -212,10 +343,21 @@ func (s *ethereumService) ethCall(ctx context.Context, to, data string) (string,
 	return result, nil
 }
 
+func (s *ethereumService) bundlerURL() string {
+	if strings.TrimSpace(s.network.BundlerURL) != "" {
+		return s.network.BundlerURL
+	}
+	return s.network.RPCURL
+}
+
 var errRPCNullResult = errors.New("rpc returned null result")
 
 func (s *ethereumService) rpcCall(ctx context.Context, method string, params []interface{}, out interface{}) error {
-	if s.network.RPCURL == "" {
+	return s.rpcCallToURL(ctx, s.network.RPCURL, method, params, out)
+}
+
+func (s *ethereumService) rpcCallToURL(ctx context.Context, rpcURL, method string, params []interface{}, out interface{}) error {
+	if strings.TrimSpace(rpcURL) == "" {
 		return fmt.Errorf("ethereum network is not configured")
 	}
 
@@ -229,7 +371,7 @@ func (s *ethereumService) rpcCall(ctx context.Context, method string, params []i
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.network.RPCURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rpcURL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -283,9 +425,34 @@ type rpcTransaction struct {
 type rpcReceipt struct {
 	BlockNumber       string         `json:"blockNumber"`
 	Status            string         `json:"status"`
+	From              string         `json:"from"`
+	To                string         `json:"to"`
+	TransactionHash   string         `json:"transactionHash"`
 	GasUsed           string         `json:"gasUsed"`
 	EffectiveGasPrice string         `json:"effectiveGasPrice"`
 	Logs              []rpcLogRecord `json:"logs"`
+}
+
+type rpcUserOperationReceipt struct {
+	UserOpHash    string         `json:"userOpHash"`
+	EntryPoint    string         `json:"entryPoint"`
+	Sender        string         `json:"sender"`
+	Nonce         string         `json:"nonce"`
+	Paymaster     string         `json:"paymaster"`
+	ActualGasCost string         `json:"actualGasCost"`
+	ActualGasUsed string         `json:"actualGasUsed"`
+	Success       bool           `json:"success"`
+	Reason        string         `json:"reason"`
+	Logs          []rpcLogRecord `json:"logs"`
+	Receipt       rpcReceipt     `json:"receipt"`
+}
+
+type rpcUserOperationByHash struct {
+	UserOperation   map[string]interface{} `json:"userOperation"`
+	EntryPoint      string                 `json:"entryPoint"`
+	BlockNumber     string                 `json:"blockNumber"`
+	BlockHash       string                 `json:"blockHash"`
+	TransactionHash string                 `json:"transactionHash"`
 }
 
 type rpcLogRecord struct {

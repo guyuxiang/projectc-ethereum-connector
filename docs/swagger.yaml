@@ -113,8 +113,16 @@ definitions:
     type: object
   models.TxSendRequest:
     properties:
+      eip7702Auth:
+        additionalProperties: true
+        type: object
+      entryPoint:
+        type: string
       txSignResult:
         type: string
+      userOperation:
+        additionalProperties: true
+        type: object
     type: object
   models.TxSubscribeCancelRequest:
     properties:
@@ -549,7 +557,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Submit a signed raw EVM transaction to the configured network
+      description: Submit either a signed raw EVM transaction or an ERC-4337 UserOperation
+        to the configured RPC or bundler
       parameters:
       - description: Configured network code
         in: path
@@ -573,7 +582,7 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/models.Response'
-      summary: Send raw transaction
+      summary: Send transaction
       tags:
       - Common
   /inner/chain-invoke/{networkCode}/wallet/faucet:
