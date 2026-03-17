@@ -31,9 +31,14 @@ type Log struct {
 }
 
 type MySQL struct {
-	DSN          string `yaml:"dsn"`
-	MaxIdleConns int    `yaml:"maxIdleConns"`
-	MaxOpenConns int    `yaml:"maxOpenConns"`
+	Username       string `yaml:"username"`
+	Password       string `yaml:"password"`
+	Host           string `yaml:"host"`
+	Port           int    `yaml:"port"`
+	Database       string `yaml:"database"`
+	MaxOpenConns   int    `yaml:"maxOpenconns"`
+	MaxIdleConns   int    `yaml:"maxIdleConns"`
+	ConnMaxLifeSec int    `yaml:"connMaxLifeSec"`
 }
 
 type Callback struct {
@@ -43,27 +48,17 @@ type Callback struct {
 }
 
 type Ethereum struct {
-	Network   NetworkConfig    `yaml:"network"`
-	Contracts []ContractConfig `yaml:"contracts"`
+	Network NetworkConfig `yaml:"network"`
 }
 
 type NetworkConfig struct {
-	Code                  string `yaml:"code"`
-	RPCURL                string `yaml:"rpcUrl"`
-	ChainID               int64  `yaml:"chainId"`
-	BlockchainExplorerURL string `yaml:"blockchainExplorerUrl"`
-}
-
-type ContractConfig struct {
-	Code              string `yaml:"code"`
-	Address           string `yaml:"address"`
-	ABI               string `yaml:"abi"`
-	DeployBlockNumber uint64 `yaml:"deployBlockNumber"`
+	Code    string `yaml:"code"`
+	RPCURL  string `yaml:"rpcUrl"`
+	ChainID int64  `yaml:"chainId"`
 }
 
 type Connector struct {
-	RequireAuthOnBusiness bool         `yaml:"requireAuthOnBusiness"`
-	Wallet                WalletSigner `yaml:"wallet"`
+	Wallet WalletSigner `yaml:"wallet"`
 }
 
 type WalletSigner struct {

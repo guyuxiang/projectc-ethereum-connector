@@ -23,6 +23,8 @@ import (
 type EthereumService interface {
 	SendRawTransaction(ctx context.Context, signedTx string) (string, error)
 	QueryTransaction(ctx context.Context, txHash string) (*models.TxQueryResponse, error)
+	QueryLogs(ctx context.Context, address string, fromBlock, toBlock uint64) ([]rpcLogRecord, error)
+	DecodeLogEvent(logEntry rpcLogRecord) (string, string, string)
 	GetAddressBalance(ctx context.Context, address string) (*models.AddressBalanceResponse, error)
 	GetLatestBlock(ctx context.Context) (*models.LatestBlockResponse, error)
 	GetTokenSupply(ctx context.Context, tokenCode string) (*models.TokenSupplyResponse, error)
@@ -173,6 +175,24 @@ func (s *ethereumService) GetTokenBalance(ctx context.Context, tokenCode, addres
 	return &models.TokenBalanceResponse{Value: models.RawNumber(hexToBigIntString(value))}, nil
 }
 
+func (s *ethereumService) QueryLogs(ctx context.Context, address string, fromBlock, toBlock uint64) ([]rpcLogRecord, error) {
+	var logs []rpcLogRecord
+	if err := s.rpcCall(ctx, "eth_getLogs", []interface{}{
+		map[string]interface{}{
+			"address":   address,
+			"fromBlock": fmt.Sprintf("0x%x", fromBlock),
+			"toBlock":   fmt.Sprintf("0x%x", toBlock),
+		},
+	}, &logs); err != nil {
+		return nil, err
+	}
+	return logs, nil
+}
+
+func (s *ethereumService) DecodeLogEvent(logEntry rpcLogRecord) (string, string, string) {
+	return s.decodeLogEvent(s.network.Code, logEntry)
+}
+
 func (s *ethereumService) getBlockByNumber(ctx context.Context, blockNumber string) (*rpcBlock, error) {
 	var block rpcBlock
 	if err := s.rpcCall(ctx, "eth_getBlockByNumber", []interface{}{blockNumber, false}, &block); err != nil {
@@ -270,6 +290,7 @@ type rpcReceipt struct {
 
 type rpcLogRecord struct {
 	BlockNumber string   `json:"blockNumber"`
+	TxHash      string   `json:"transactionHash"`
 	Address     string   `json:"address"`
 	LogIndex    string   `json:"logIndex"`
 	Topics      []string `json:"topics"`
@@ -406,7 +427,7 @@ func (s *ethereumService) decodeLogEvent(networkCode string, logEntry rpcLogReco
 		return determineChainEventType(matched.Name, contract.Code), matched.Name, logEntry.Data
 	}
 	eventType := determineChainEventType(matched.Name, contract.Code)
-	return eventType, matched.Name, transformEventData(eventType, contract, string(raw))
+	return eventType, matched.Name, s.transformEventData(eventType, contract, string(raw))
 }
 
 func (s *ethereumService) findContractByAddress(address string) *models.ContractInfo {
@@ -530,17 +551,19 @@ func determineChainEventType(eventName, contractCode string) string {
 	return eventName
 }
 
-func transformEventData(eventType string, contract *models.ContractInfo, raw string) string {
+func (s *ethereumService) transformEventData(eventType string, contract *models.ContractInfo, raw string) string {
 	var payload map[string]interface{}
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 		return raw
 	}
 
+	tokenCode := s.resolveTokenCode(lowerString(firstNonNil(payload["tokenAddress"], payload["contractAddr"])))
+
 	var transformed interface{}
 	switch eventType {
 	case "RT_TRANSFER":
 		transformed = map[string]interface{}{
-			"tokenCode":    contract.Code,
+			"tokenCode":    tokenCode,
 			"tokenAddress": lowerString(payload["contractAddr"]),
 			"from":         lowerString(payload["from"]),
 			"to":           lowerString(payload["to"]),
@@ -556,14 +579,14 @@ func transformEventData(eventType string, contract *models.ContractInfo, raw str
 	case "RT_MINT":
 		transformed = map[string]interface{}{
 			"bid":       stringValue(firstNonNil(payload["txID"], payload["bid"], payload["businessId"])),
-			"tokenCode": contract.Code,
+			"tokenCode": tokenCode,
 			"recipient": lowerString(firstNonNil(payload["recipient"], payload["to"])),
 			"amount":    decimalString(firstNonNil(payload["amount"], payload["value"])),
 		}
 	case "RT_BURN":
 		transformed = map[string]interface{}{
 			"bid":       stringValue(firstNonNil(payload["txID"], payload["bid"], payload["businessId"])),
-			"tokenCode": contract.Code,
+			"tokenCode": tokenCode,
 			"owner":     lowerString(firstNonNil(payload["owner"], payload["from"])),
 			"amount":    decimalString(firstNonNil(payload["amount"], payload["value"])),
 		}
@@ -571,7 +594,7 @@ func transformEventData(eventType string, contract *models.ContractInfo, raw str
 		transformed = map[string]interface{}{
 			"bid":          stringValue(payload["bid"]),
 			"tokenAddress": lowerString(firstNonNil(payload["tokenAddress"], payload["contractAddr"])),
-			"tokenCode":    contract.Code,
+			"tokenCode":    tokenCode,
 			"requester":    lowerString(payload["requester"]),
 			"value":        decimalString(firstNonNil(payload["value"], payload["amount"])),
 			"state":        stringValue(payload["state"]),
@@ -580,7 +603,7 @@ func transformEventData(eventType string, contract *models.ContractInfo, raw str
 	case "RT_OFF_RAMP", "RT_ENCASH":
 		transformed = map[string]interface{}{
 			"bid":             stringValue(payload["bid"]),
-			"tokenCode":       contract.Code,
+			"tokenCode":       tokenCode,
 			"tokenAddress":    lowerString(firstNonNil(payload["tokenAddress"], payload["contractAddr"])),
 			"contractAddress": lowerString(payload["contractAddr"]),
 			"encasher":        lowerString(firstNonNil(payload["requester"], payload["encasher"])),
@@ -604,7 +627,7 @@ func transformEventData(eventType string, contract *models.ContractInfo, raw str
 	case "RT_SEND_CREATE":
 		transformed = map[string]interface{}{
 			"bid":                  stringValue(firstNonNil(payload["businessId"], payload["bid"])),
-			"tokenCode":            contract.Code,
+			"tokenCode":            tokenCode,
 			"tokenAddress":         lowerString(payload["tokenAddress"]),
 			"sendContractAddress":  lowerString(payload["contractAddr"]),
 			"creator":              lowerString(payload["creator"]),
@@ -648,7 +671,7 @@ func transformEventData(eventType string, contract *models.ContractInfo, raw str
 	case "RT_SEND_SUSPENSE":
 		transformed = map[string]interface{}{
 			"bid":                stringValue(firstNonNil(payload["businessID"], payload["businessId"], payload["bid"])),
-			"tokenCode":          contract.Code,
+			"tokenCode":          tokenCode,
 			"receiverAddress":    lowerString(payload["receiverAddress"]),
 			"receiverPermission": decimalString(payload["receiverPermission"]),
 			"value":              decimalString(firstNonNil(payload["amount"], payload["value"])),
@@ -658,7 +681,7 @@ func transformEventData(eventType string, contract *models.ContractInfo, raw str
 	case "RT_ENCASH_SUSPENSE":
 		transformed = map[string]interface{}{
 			"bid":                stringValue(firstNonNil(payload["businessID"], payload["businessId"], payload["bid"])),
-			"tokenCode":          contract.Code,
+			"tokenCode":          tokenCode,
 			"receiver":           lowerString(firstNonNil(payload["receiverAddress"], payload["receiver"])),
 			"receiverPermission": decimalString(payload["receiverPermission"]),
 			"amount":             decimalString(firstNonNil(payload["amount"], payload["value"])),
@@ -730,6 +753,17 @@ func transformEventData(eventType string, contract *models.ContractInfo, raw str
 		return raw
 	}
 	return string(out)
+}
+
+func (s *ethereumService) resolveTokenCode(address string) string {
+	if address == "" {
+		return ""
+	}
+	token, err := s.tokens.FindTokenByAddress(address)
+	if err != nil || token == nil {
+		return ""
+	}
+	return token.TokenCode
 }
 
 func convertSingleConditions(value interface{}) []map[string]interface{} {

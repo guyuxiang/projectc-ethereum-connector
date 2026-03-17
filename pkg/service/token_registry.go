@@ -15,6 +15,7 @@ type TokenRegistryService interface {
 	Delete(tokenCode string) error
 	List() ([]models.TokenInfo, error)
 	FindToken(tokenCode string) (*models.TokenInfo, error)
+	FindTokenByAddress(address string) (*models.TokenInfo, error)
 }
 
 type tokenRegistryService struct{}
@@ -32,11 +33,15 @@ func (s *tokenRegistryService) Add(req models.TokenAddRequest) (*models.TokenInf
 	if req.TokenAddress == "" {
 		return nil, errors.New("tokenAddress is required")
 	}
+	if req.Decimals < 0 {
+		return nil, errors.New("decimals must be greater than or equal to 0")
+	}
 
 	row := store.TokenRegistryPO{
 		Code:         req.TokenCode,
 		NetworkCode:  configuredNetworkCode(),
 		TokenAddress: req.TokenAddress,
+		Decimals:     req.Decimals,
 	}
 	if err := mysql.DB().Where("code = ? and network_code = ?", row.Code, row.NetworkCode).Assign(row).FirstOrCreate(&row).Error; err != nil {
 		return nil, err
@@ -83,10 +88,21 @@ func (s *tokenRegistryService) FindToken(tokenCode string) (*models.TokenInfo, e
 	return convertTokenRegistryPO(row), nil
 }
 
+func (s *tokenRegistryService) FindTokenByAddress(address string) (*models.TokenInfo, error) {
+	var row store.TokenRegistryPO
+	if err := mysql.DB().Where("lower(token_address) = ? and network_code = ?", strings.ToLower(strings.TrimSpace(address)), configuredNetworkCode()).First(&row).Error; err != nil {
+		return nil, errors.New("token not found")
+	}
+	return convertTokenRegistryPO(row), nil
+}
+
 func convertTokenRegistryPO(row store.TokenRegistryPO) *models.TokenInfo {
 	return &models.TokenInfo{
 		TokenCode:    row.Code,
 		NetworkCode:  row.NetworkCode,
 		TokenAddress: row.TokenAddress,
+		Decimals:     row.Decimals,
+		CreatedAt:    models.TimeToMillis(row.CreatedAt),
+		UpdatedAt:    models.TimeToMillis(row.UpdatedAt),
 	}
 }

@@ -208,7 +208,7 @@ MySQL 为必选依赖。
 
 这使得合约地址的事件扫描可以在配置应用后自动开始。
 
-当前运行时读取的是数据库中的当前合约配置，而不是直接把 `ethereum.contracts` 当作在线配置源。对于新环境，如果数据库为空，需要先通过 `push -> apply` 写入并生效合约配置，之后 token 查询能力才可正常使用。
+当前运行时读取的是数据库中的当前合约配置。对于新环境，如果数据库为空，需要先通过 `push -> apply` 写入并生效合约配置，之后 token 查询能力才可正常使用。
 
 ### 4.7 订阅系统
 
@@ -335,11 +335,16 @@ MySQL 为必选依赖。
 
 ### 7.2 MySQL
 
-- `mysql.dsn`
+- `mysql.username`
+- `mysql.password`
+- `mysql.host`
+- `mysql.port`
+- `mysql.database`
 - `mysql.maxIdleConns`
-- `mysql.maxOpenConns`
+- `mysql.maxOpenconns`
+- `mysql.connMaxLifeSec`
 
-`mysql.dsn` 为必填项。
+`mysql.username`、`mysql.host`、`mysql.port`、`mysql.database` 为必填项。
 
 ### 7.3 Callback
 
@@ -358,17 +363,10 @@ MySQL 为必选依赖。
   - `code`
   - `rpcUrl`
   - `chainId`
-  - `blockchainExplorerUrl`
-- `ethereum.contracts`
-  - `code`
-  - `address`
-  - `abi`
-  - `deployBlockNumber`
 
 其中：
 
 - `ethereum.network` 是当前实例唯一使用的链配置
-- `ethereum.contracts` 当前更适合作为静态参考配置，运行时真正生效的是数据库中的当前合约配置
 
 ### 7.5 Connector
 

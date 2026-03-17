@@ -16,8 +16,8 @@ func main() {
 	util.SetupSigusr1Trap()
 
 	mysqlCfg := config.GetConfig().MySQL
-	if mysqlCfg == nil || mysqlCfg.DSN == "" {
-		log.Fatal("mysql dsn is required")
+	if mysqlCfg == nil || mysqlCfg.Username == "" || mysqlCfg.Host == "" || mysqlCfg.Port == 0 || mysqlCfg.Database == "" {
+		log.Fatal("mysql username/host/port/database are required")
 	}
 	if _, err := mysql.Init(mysqlCfg); err != nil {
 		log.Fatalf("init mysql failed: %v", err)

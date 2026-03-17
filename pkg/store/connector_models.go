@@ -115,6 +115,7 @@ type TokenRegistryPO struct {
 	Code         string `gorm:"size:191;uniqueIndex;not null"`
 	NetworkCode  string `gorm:"size:128;index;not null"`
 	TokenAddress string `gorm:"size:191;not null"`
+	Decimals     int    `gorm:"not null;default:18"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }

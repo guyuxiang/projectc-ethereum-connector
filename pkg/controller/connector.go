@@ -324,13 +324,13 @@ func (ctl *ConnectorController) TxSubscribe(c *gin.Context) {
 }
 
 // AddressSubscribe godoc
-// @Summary Subscribe address
-// @Description Register an address scan subscription for callback processing
+// @Summary Subscribe contract address logs
+// @Description Register a contract-address log subscription based on eth_getLogs for callback processing
 // @Tags Subscription
 // @Accept json
 // @Produce json
 // @Param networkCode path string true "Configured network code"
-// @Param request body models.AddressSubscribeRequest true "Address subscription payload"
+// @Param request body models.AddressSubscribeRequest true "Contract address subscription payload"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
 // @Router /inner/chain-data-subscribe/{networkCode}/address-subscribe [post]
@@ -364,13 +364,13 @@ func (ctl *ConnectorController) TxSubscribeCancel(c *gin.Context) {
 }
 
 // AddressSubscribeCancel godoc
-// @Summary Cancel address subscription
-// @Description Update or stop an address scan subscription
+// @Summary Cancel contract address log subscription
+// @Description Update or stop a contract-address log subscription
 // @Tags Subscription
 // @Accept json
 // @Produce json
 // @Param networkCode path string true "Configured network code"
-// @Param request body models.AddressSubscribeCancelRequest true "Address subscription cancel payload"
+// @Param request body models.AddressSubscribeCancelRequest true "Contract address subscription cancel payload"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
 // @Router /inner/chain-data-subscribe/{networkCode}/address-subscribe-cancel [post]

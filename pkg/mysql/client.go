@@ -3,6 +3,8 @@ package mysql
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/config"
@@ -16,11 +18,11 @@ func Init(cfg *config.MySQL) (*gorm.DB, error) {
 	if cfg == nil {
 		return nil, errors.New("mysql config is nil")
 	}
-	if cfg.DSN == "" {
-		return nil, errors.New("mysql dsn is empty")
+	if cfg.Username == "" || cfg.Host == "" || cfg.Port == 0 || cfg.Database == "" {
+		return nil, errors.New("mysql config is incomplete")
 	}
 
-	conn, err := gorm.Open(mysql.Open(cfg.DSN), &gorm.Config{})
+	conn, err := gorm.Open(mysql.Open(buildDSN(cfg)), &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}
@@ -68,5 +70,20 @@ func configurePool(sqlDB *sql.DB, cfg *config.MySQL) {
 	if cfg.MaxOpenConns > 0 {
 		sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 	}
+	if cfg.ConnMaxLifeSec > 0 {
+		sqlDB.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifeSec) * time.Second)
+		return
+	}
 	sqlDB.SetConnMaxLifetime(time.Hour)
+}
+
+func buildDSN(cfg *config.MySQL) string {
+	return fmt.Sprintf(
+		"%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		url.QueryEscape(cfg.Username),
+		url.QueryEscape(cfg.Password),
+		cfg.Host,
+		cfg.Port,
+		cfg.Database,
+	)
 }

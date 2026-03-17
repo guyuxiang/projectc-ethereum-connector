@@ -22,9 +22,29 @@ var flagsOpts = []flagOpt{
 		optUsage:        "log level",
 	},
 	{
-		optName:         FLAG_KEY_MYSQL_DSN,
+		optName:         FLAG_KEY_MYSQL_USERNAME,
 		optDefaultValue: "",
-		optUsage:        "mysql dsn",
+		optUsage:        "mysql username",
+	},
+	{
+		optName:         FLAG_KEY_MYSQL_PASSWORD,
+		optDefaultValue: "",
+		optUsage:        "mysql password",
+	},
+	{
+		optName:         FLAG_KEY_MYSQL_HOST,
+		optDefaultValue: "",
+		optUsage:        "mysql host",
+	},
+	{
+		optName:         FLAG_KEY_MYSQL_PORT,
+		optDefaultValue: 3306,
+		optUsage:        "mysql port",
+	},
+	{
+		optName:         FLAG_KEY_MYSQL_DATABASE,
+		optDefaultValue: "",
+		optUsage:        "mysql database",
 	},
 	{
 		optName:         FLAG_KEY_MYSQL_MAX_IDLE,
@@ -35,5 +55,10 @@ var flagsOpts = []flagOpt{
 		optName:         FLAG_KEY_MYSQL_MAX_OPEN,
 		optDefaultValue: 20,
 		optUsage:        "mysql max open connections",
+	},
+	{
+		optName:         FLAG_KEY_MYSQL_MAX_LIFE,
+		optDefaultValue: 300,
+		optUsage:        "mysql connection max lifetime seconds",
 	},
 }

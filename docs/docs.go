@@ -25,7 +25,7 @@ const docTemplate = `{
     "paths": {
         "/inner/chain-data-subscribe/{networkCode}/address-subscribe": {
             "post": {
-                "description": "Register an address scan subscription for callback processing",
+                "description": "Register a contract-address log subscription based on eth_getLogs for callback processing",
                 "consumes": [
                     "application/json"
                 ],
@@ -35,7 +35,7 @@ const docTemplate = `{
                 "tags": [
                     "Subscription"
                 ],
-                "summary": "Subscribe address",
+                "summary": "Subscribe contract address logs",
                 "parameters": [
                     {
                         "type": "string",
@@ -45,7 +45,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Address subscription payload",
+                        "description": "Contract address subscription payload",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -72,7 +72,7 @@ const docTemplate = `{
         },
         "/inner/chain-data-subscribe/{networkCode}/address-subscribe-cancel": {
             "post": {
-                "description": "Update or stop an address scan subscription",
+                "description": "Update or stop a contract-address log subscription",
                 "consumes": [
                     "application/json"
                 ],
@@ -82,7 +82,7 @@ const docTemplate = `{
                 "tags": [
                     "Subscription"
                 ],
-                "summary": "Cancel address subscription",
+                "summary": "Cancel contract address log subscription",
                 "parameters": [
                     {
                         "type": "string",
@@ -92,7 +92,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Address subscription cancel payload",
+                        "description": "Contract address subscription cancel payload",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1015,6 +1015,9 @@ const docTemplate = `{
         "models.TokenAddRequest": {
             "type": "object",
             "properties": {
+                "decimals": {
+                    "type": "integer"
+                },
                 "tokenAddress": {
                     "type": "string"
                 },

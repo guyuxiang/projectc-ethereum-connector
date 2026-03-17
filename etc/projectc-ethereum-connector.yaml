@@ -1,6 +1,6 @@
 server:
   host: "0.0.0.0"
-  port: 8081
+  port: 80
   version: "0.1.0"
 gin:
   mode: debug
@@ -10,20 +10,24 @@ auth:
   username: "test"
   password: "test"
 mysql:
-  dsn: ""
-  maxIdleConns: 10
-  maxOpenConns: 20
+  username: "root"
+  password: "123456"
+  host: "mysql01.dev.lls.com"
+  port: 4120
+  database: "projectc-sepolia-connector"
+  maxOpenconns: 200
+  maxIdleConns: 200
+  connMaxLifeSec: 300
 callback:
   mode: "http"
   txHttpUrl: "http://unblock-custodial-wallet/api/v1/inner/wallet/callback/tx"
   rollbackHttpUrl: "http://unblock-custodial-wallet/api/v1/inner/wallet/callback/rollback"
 connector:
-  requireAuthOnBusiness: true
-  wallet: {}
+  wallet:
+    fromAddress: "0xYourWalletAddress"
+    privateKey: "0xYourPrivateKey"
 ethereum:
   network:
     code: "sepolia"
-    rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com"
+    rpcUrl: "https://sepolia.gateway.tenderly.co/2xRV8vQTDZE3KmbMjo4jCm"
     chainId: 11155111
-    blockchainExplorerUrl: "https://sepolia.etherscan.io"
-  contracts: []

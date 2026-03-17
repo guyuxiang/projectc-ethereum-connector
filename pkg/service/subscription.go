@@ -6,14 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/config"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/models"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/mysql"
@@ -222,60 +218,34 @@ func (s *subscriptionService) refreshAddressSubscriptions(ctx context.Context) e
 		return err
 	}
 	for _, row := range rows {
-		network, err := configuredNetwork()
+		latest, err := s.eth.GetLatestBlock(ctx)
 		if err != nil {
 			continue
 		}
-		client, err := ethclient.DialContext(ctx, network.RPCURL)
-		if err != nil {
+		if latest == nil {
 			continue
 		}
-		latest, err := client.BlockNumber(ctx)
-		if err != nil {
-			client.Close()
-			continue
-		}
+
 		end := row.EndBlockNumber
-		if end > latest {
-			end = latest
+		if end > latest.BlockNumber {
+			end = latest.BlockNumber
 		}
 		nextEnd := row.NextBlockNumber + 100
 		if nextEnd > end {
 			nextEnd = end
 		}
-		target := common.HexToAddress(row.Address)
-		discoveredTxCodes := make(map[string]struct{})
-		for blockNum := row.NextBlockNumber; blockNum <= nextEnd; blockNum++ {
-			block, blockErr := client.BlockByNumber(ctx, bigIntFromUint64(blockNum))
-			if blockErr != nil {
-				continue
-			}
-			for _, tx := range block.Transactions() {
-				receipt, receiptErr := client.TransactionReceipt(ctx, tx.Hash())
-				if receiptErr != nil {
-					continue
-				}
-				signer := latestSignerForBlock(tx.ChainId())
-				from, signErr := signer.Sender(tx)
-				if signErr != nil {
-					continue
-				}
-				var to common.Address
-				if tx.To() != nil {
-					to = *tx.To()
-				}
-				if from == target || to == target || receiptMatchesAddress(receipt, target) {
-					discoveredTxCodes[tx.Hash().Hex()] = struct{}{}
-					s.AddTx(models.TxSubscribeRequest{
-						TxCode: tx.Hash().Hex(),
-						SubscribeRange: models.TxSubscribeRange{
-							EndTimestamp: time.Now().Add(24 * time.Hour).UnixMilli(),
-						},
-					})
-				}
-			}
+		discoveredTxCodes, err := s.collectSubscribedLogTxs(ctx, row.Address, row.NextBlockNumber, nextEnd)
+		if err != nil {
+			continue
 		}
-		client.Close()
+		for txCode := range discoveredTxCodes {
+			s.AddTx(models.TxSubscribeRequest{
+				TxCode: txCode,
+				SubscribeRange: models.TxSubscribeRange{
+					EndTimestamp: time.Now().Add(24 * time.Hour).UnixMilli(),
+				},
+			})
+		}
 		if nextEnd >= row.NextBlockNumber {
 			s.createAddressSyncWaitingCheck(row.NetworkCode, row.Address, row.NextBlockNumber, nextEnd, discoveredTxCodes)
 		}
@@ -290,37 +260,6 @@ func (s *subscriptionService) refreshAddressSubscriptions(ctx context.Context) e
 		_ = mysql.DB().Save(&row).Error
 	}
 	return nil
-}
-
-func bigIntFromUint64(v uint64) *big.Int {
-	return new(big.Int).SetUint64(v)
-}
-
-func latestSignerForBlock(chainID *big.Int) types.Signer {
-	return types.LatestSignerForChainID(chainID)
-}
-
-var erc20TransferTopic = common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
-
-func receiptMatchesAddress(receipt *types.Receipt, target common.Address) bool {
-	if receipt == nil {
-		return false
-	}
-	targetHash := common.BytesToHash(common.LeftPadBytes(target.Bytes(), 32))
-	for _, logEntry := range receipt.Logs {
-		if logEntry == nil {
-			continue
-		}
-		if logEntry.Address == target {
-			return true
-		}
-		if len(logEntry.Topics) >= 3 && logEntry.Topics[0] == erc20TransferTopic {
-			if logEntry.Topics[1] == targetHash || logEntry.Topics[2] == targetHash {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func (s *subscriptionService) createAddressSyncWaitingCheck(networkCode, address string, startBlock, endBlock uint64, txCodes map[string]struct{}) {
@@ -397,46 +336,36 @@ func (s *subscriptionService) scanAddressTxs(ctx context.Context, networkCode st
 	if len(addresses) == 0 || endBlock < startBlock {
 		return result, nil
 	}
-	network, err := configuredNetwork()
-	if err != nil {
-		return nil, err
-	}
-	client, err := ethclient.DialContext(ctx, network.RPCURL)
-	if err != nil {
-		return nil, err
-	}
-	defer client.Close()
-
-	targets := make([]common.Address, 0, len(addresses))
 	for _, address := range addresses {
-		targets = append(targets, common.HexToAddress(address))
+		txSet, err := s.collectSubscribedLogTxs(ctx, address, startBlock, endBlock)
+		if err != nil {
+			return nil, err
+		}
+		for txCode := range txSet {
+			result[txCode] = struct{}{}
+		}
 	}
-	for blockNum := startBlock; blockNum <= endBlock; blockNum++ {
-		block, blockErr := client.BlockByNumber(ctx, bigIntFromUint64(blockNum))
-		if blockErr != nil {
+	return result, nil
+}
+
+func (s *subscriptionService) collectSubscribedLogTxs(ctx context.Context, address string, startBlock, endBlock uint64) (map[string]struct{}, error) {
+	result := make(map[string]struct{})
+	if endBlock < startBlock {
+		return result, nil
+	}
+	logs, err := s.eth.QueryLogs(ctx, address, startBlock, endBlock)
+	if err != nil {
+		return nil, err
+	}
+	for _, logEntry := range logs {
+		eventType, eventName, _ := s.eth.DecodeLogEvent(logEntry)
+		if eventType == "" && eventName == "" {
 			continue
 		}
-		for _, tx := range block.Transactions() {
-			receipt, receiptErr := client.TransactionReceipt(ctx, tx.Hash())
-			if receiptErr != nil {
-				continue
-			}
-			signer := latestSignerForBlock(tx.ChainId())
-			from, signErr := signer.Sender(tx)
-			if signErr != nil {
-				continue
-			}
-			var to common.Address
-			if tx.To() != nil {
-				to = *tx.To()
-			}
-			for _, target := range targets {
-				if from == target || to == target || receiptMatchesAddress(receipt, target) {
-					result[tx.Hash().Hex()] = struct{}{}
-					break
-				}
-			}
+		if logEntry.TxHash == "" {
+			continue
 		}
+		result[logEntry.TxHash] = struct{}{}
 	}
 	return result, nil
 }

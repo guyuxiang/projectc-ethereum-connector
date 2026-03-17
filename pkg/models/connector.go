@@ -1,6 +1,9 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 type TxSendRequest struct {
 	TxSignResult string `json:"txSignResult"`
@@ -54,6 +57,7 @@ type TokenBalanceResponse struct {
 type TokenAddRequest struct {
 	TokenCode    string `json:"tokenCode"`
 	TokenAddress string `json:"tokenAddress"`
+	Decimals     int    `json:"decimals"`
 }
 
 type TokenGetRequest struct {
@@ -71,6 +75,9 @@ type TokenInfo struct {
 	TokenCode    string `json:"tokenCode"`
 	NetworkCode  string `json:"networkCode"`
 	TokenAddress string `json:"tokenAddress"`
+	Decimals     int    `json:"decimals"`
+	CreatedAt    int64  `json:"createdAt"`
+	UpdatedAt    int64  `json:"updatedAt"`
 }
 
 type TokenListResponse struct {
@@ -159,10 +166,9 @@ type ContractConfigPushRecordDTO struct {
 }
 
 type Web3Network struct {
-	Code                  string `json:"code"`
-	NodeAddress           string `json:"nodeAddress"`
-	ChainID               int64  `json:"chainId"`
-	BlockchainExplorerURL string `json:"blockchainExplorerUrl"`
+	Code        string `json:"code"`
+	NodeAddress string `json:"nodeAddress"`
+	ChainID     int64  `json:"chainId"`
 }
 
 type Web3Contract struct {
@@ -179,6 +185,13 @@ type Web3ContractInfo struct {
 
 type Web3ContractInfoResponse struct {
 	Web3ContractInfos []Web3ContractInfo `json:"web3ContractInfos"`
+}
+
+func TimeToMillis(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
 }
 
 type ChainTx struct {

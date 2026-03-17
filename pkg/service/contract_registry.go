@@ -93,10 +93,9 @@ func (s *contractRegistryService) listWeb3ContractsFromDB() []models.Web3Contrac
 				ABI:         contract.InterfaceDefinition,
 			},
 			Network: models.Web3Network{
-				Code:                  network.Code,
-				NodeAddress:           network.RPCURL,
-				ChainID:               network.ChainID,
-				BlockchainExplorerURL: network.BlockchainExplorerURL,
+				Code:        network.Code,
+				NodeAddress: network.RPCURL,
+				ChainID:     network.ChainID,
 			},
 		})
 	}
