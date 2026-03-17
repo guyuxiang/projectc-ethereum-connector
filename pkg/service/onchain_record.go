@@ -8,16 +8,13 @@ import (
 	"math/big"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/guyuxiang/projectc-ethereum-connector/pkg/config"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/models"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/mysql"
-	"github.com/guyuxiang/projectc-ethereum-connector/pkg/rabbitmq"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/store"
 )
 
@@ -29,10 +26,7 @@ type OnchainRecordService interface {
 	Refresh(ctx context.Context) error
 }
 
-type onchainRecordService struct {
-	mu      sync.RWMutex
-	records map[string]*models.OnchainRecordResponse
-}
+type onchainRecordService struct{}
 
 type PreparedOnchainRecord struct {
 	Code                  string
@@ -50,25 +44,10 @@ type PreparedOnchainRecord struct {
 }
 
 func NewOnchainRecordService() OnchainRecordService {
-	return &onchainRecordService{
-		records: map[string]*models.OnchainRecordResponse{},
-	}
+	return &onchainRecordService{}
 }
 
 func (s *onchainRecordService) CreatePrepared(record PreparedOnchainRecord) (*models.OnchainRecordResponse, error) {
-	if mysql.DB() == nil {
-		resp := &models.OnchainRecordResponse{
-			IdempotencyKey:   record.IdempotencyKey,
-			OnchainStatus:    record.OnchainStatus,
-			ResponseBusiData: record.ResponseBusiData,
-			TxCode:           record.TxCode,
-		}
-		s.mu.Lock()
-		s.records[record.OnchainType+":"+record.IdempotencyKey] = resp
-		s.mu.Unlock()
-		return resp, nil
-	}
-
 	row := store.OnchainRecordPO{
 		Code:                  record.Code,
 		IdempotencyKey:        record.IdempotencyKey,
@@ -94,54 +73,24 @@ func (s *onchainRecordService) CreatePrepared(record PreparedOnchainRecord) (*mo
 }
 
 func (s *onchainRecordService) Create(kind, key string, payload interface{}) *models.OnchainRecordResponse {
-	if mysql.DB() != nil {
-		record, err := s.createInDB(kind, key, payload)
-		if err == nil {
-			return record
+	record, err := s.createInDB(kind, key, payload)
+	if err != nil {
+		responseData, _ := json.Marshal(payload)
+		return &models.OnchainRecordResponse{
+			IdempotencyKey:   key,
+			OnchainStatus:    "FAILED",
+			ResponseBusiData: string(responseData),
+			TxCode:           "",
 		}
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	responseData, _ := json.Marshal(payload)
-	record := &models.OnchainRecordResponse{
-		IdempotencyKey:   key,
-		OnchainStatus:    "PENDING",
-		ResponseBusiData: string(responseData),
-		TxCode:           "",
-	}
-	s.records[kind+":"+key] = record
-
-	message, _ := json.Marshal(map[string]interface{}{
-		"type":           kind,
-		"idempotencyKey": key,
-		"createdAt":      time.Now().UnixMilli(),
-		"payload":        payload,
-	})
-	_ = rabbitmq.Publish(message)
-
 	return record
 }
 
 func (s *onchainRecordService) Get(kind, key string) (*models.OnchainRecordResponse, error) {
-	if mysql.DB() != nil {
-		return s.getFromDB(kind, key)
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	record, ok := s.records[kind+":"+key]
-	if !ok {
-		return nil, errors.New("onchain record not found")
-	}
-	copy := *record
-	return &copy, nil
+	return s.getFromDB(kind, key)
 }
 
 func (s *onchainRecordService) Submit(ctx context.Context, code string) error {
-	if mysql.DB() == nil {
-		return nil
-	}
 	var row store.OnchainRecordPO
 	if err := mysql.DB().Where("code = ?", code).First(&row).Error; err != nil {
 		return err
@@ -150,7 +99,7 @@ func (s *onchainRecordService) Submit(ctx context.Context, code string) error {
 		return nil
 	}
 
-	network, err := findNetworkConfig(row.NetworkCode)
+	network, err := configuredNetwork()
 	if err != nil {
 		return err
 	}
@@ -185,9 +134,6 @@ func (s *onchainRecordService) Submit(ctx context.Context, code string) error {
 }
 
 func (s *onchainRecordService) Refresh(ctx context.Context) error {
-	if mysql.DB() == nil {
-		return nil
-	}
 	var rows []store.OnchainRecordPO
 	if err := mysql.DB().Where("onchain_status in ?", []string{"INIT", "PROCESSING", "TO_BE_RESIGN"}).Find(&rows).Error; err != nil {
 		return err
@@ -200,7 +146,7 @@ func (s *onchainRecordService) Refresh(ctx context.Context) error {
 		if row.TxCode == "" {
 			continue
 		}
-		network, err := findNetworkConfig(row.NetworkCode)
+		network, err := configuredNetwork()
 		if err != nil {
 			continue
 		}
@@ -259,11 +205,6 @@ func (s *onchainRecordService) createInDB(kind, key string, payload interface{})
 		}
 		return nil, err
 	}
-
-	message, _ := json.Marshal(map[string]interface{}{
-		"onchainRecordCode": row.Code,
-	})
-	_ = rabbitmq.Publish(message)
 	return convertOnchainRecordPO(row), nil
 }
 
@@ -313,7 +254,6 @@ func (s *onchainRecordService) reSignAndSubmit(ctx context.Context, row *store.O
 }
 
 func (s *onchainRecordService) rebuildPreparedRecord(ctx context.Context, row store.OnchainRecordPO, nonceOverride *uint64) (*PreparedOnchainRecord, error) {
-	sc := &scplusService{txSigner: newContractTxService(NewContractRegistryService()), onchain: s}
 	switch row.OnchainType {
 	case "NATIVE_TOKEN_CHARGE":
 		var req models.BalanceChargeRequest
@@ -321,43 +261,7 @@ func (s *onchainRecordService) rebuildPreparedRecord(ctx context.Context, row st
 			return nil, err
 		}
 		wallet := &walletService{nonce: NewSignerNonceService(), onchain: s}
-		return wallet.createNativeChargePrepared(ctx, row.NetworkCode, req, nonceOverride)
-	case "SCPLUS_SEND_SETTLE":
-		var req models.SettleRequest
-		if err := json.Unmarshal([]byte(row.RequestBusiData), &req); err != nil {
-			return nil, err
-		}
-		return sc.buildDttSendSettlePrepared(ctx, row.NetworkCode, req, nonceOverride)
-	case "SCPLUS_AUTO_REJECT":
-		var req models.AutoRejectRequest
-		if err := json.Unmarshal([]byte(row.RequestBusiData), &req); err != nil {
-			return nil, err
-		}
-		return sc.buildAutoRejectPrepared(ctx, row.NetworkCode, req, nonceOverride)
-	case "SCPLUS_ONRAMP":
-		var req models.InstantOnRampRequest
-		if err := json.Unmarshal([]byte(row.RequestBusiData), &req); err != nil {
-			return nil, err
-		}
-		return sc.buildInstantOnRampPrepared(ctx, row.NetworkCode, req, nonceOverride)
-	case "SCPLUS_FINANCE":
-		var req models.FinanceInvokeRequest
-		if err := json.Unmarshal([]byte(row.RequestBusiData), &req); err != nil {
-			return nil, err
-		}
-		return sc.buildFinancePrepared(ctx, row.NetworkCode, req, nonceOverride)
-	case "SCPLUS_ISSUE":
-		var req models.IssueInvokeRequest
-		if err := json.Unmarshal([]byte(row.RequestBusiData), &req); err != nil {
-			return nil, err
-		}
-		return sc.buildIssuePrepared(ctx, row.NetworkCode, req, nonceOverride)
-	case "SCPLUS_ISSUE_AND_FINANCE":
-		var req models.IssueAndFinanceInvokeRequest
-		if err := json.Unmarshal([]byte(row.RequestBusiData), &req); err != nil {
-			return nil, err
-		}
-		return sc.buildIssueFPrepared(ctx, row.NetworkCode, req, nonceOverride)
+		return wallet.createNativeChargePrepared(ctx, req, nonceOverride)
 	default:
 		return nil, fmt.Errorf("unsupported onchain type for resign: %s", row.OnchainType)
 	}
@@ -371,7 +275,7 @@ func sanitizeNextNonce(nextNonce uint64) *uint64 {
 }
 
 func addDefaultTxSubscription(networkCode, txCode string) {
-	if mysql.DB() == nil || txCode == "" {
+	if txCode == "" {
 		return
 	}
 	record := store.TxSubscriptionPO{
@@ -382,18 +286,6 @@ func addDefaultTxSubscription(networkCode, txCode string) {
 		Status:       "ACTIVE",
 	}
 	mysql.DB().Where("code = ?", record.Code).Assign(record).FirstOrCreate(&record)
-}
-
-func findNetworkConfig(networkCode string) (config.NetworkConfig, error) {
-	cfg := config.GetConfig()
-	if cfg.Ethereum != nil {
-		for _, network := range cfg.Ethereum.Networks {
-			if network.Code == networkCode {
-				return network, nil
-			}
-		}
-	}
-	return config.NetworkConfig{}, errors.New("network config not found")
 }
 
 func mustDecodeTx(signedTx string) *types.Transaction {

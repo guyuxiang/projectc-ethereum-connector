@@ -13,24 +13,25 @@ import (
 
 type ConnectorController struct {
 	eth           service.EthereumService
+	tokens        service.TokenRegistryService
 	contracts     service.ContractRegistryService
 	subscriptions service.SubscriptionService
 	onchain       service.OnchainRecordService
 	wallet        service.WalletService
-	scplus        service.ScplusService
 }
 
 func NewConnectorController() *ConnectorController {
 	contracts := service.NewContractRegistryService()
 	onchain := service.NewOnchainRecordService()
-	eth := service.NewEthereumService(contracts)
+	tokens := service.NewTokenRegistryService()
+	eth := service.NewEthereumService(contracts, tokens)
 	return &ConnectorController{
 		eth:           eth,
+		tokens:        tokens,
 		contracts:     contracts,
 		subscriptions: service.NewSubscriptionService(eth),
 		onchain:       onchain,
 		wallet:        service.NewWalletService(onchain),
-		scplus:        service.NewScplusService(contracts, onchain),
 	}
 }
 
@@ -44,12 +45,23 @@ func (ctl *ConnectorController) StartBackgroundLoop() {
 	}()
 }
 
+// TxSend godoc
+// @Summary Send raw transaction
+// @Description Submit a signed raw EVM transaction to the configured network
+// @Tags Common
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.TxSendRequest true "Signed transaction payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/chain-invoke/{networkCode}/common/tx-send [post]
 func (ctl *ConnectorController) TxSend(c *gin.Context) {
 	var req models.TxSendRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	txHash, err := ctl.eth.SendRawTransaction(c.Request.Context(), c.Param("networkCode"), req.TxSignResult)
+	txHash, err := ctl.eth.SendRawTransaction(c.Request.Context(), req.TxSignResult)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -57,12 +69,23 @@ func (ctl *ConnectorController) TxSend(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(models.TxSendResponse{TxCode: txHash}))
 }
 
+// TxQuery godoc
+// @Summary Query transaction
+// @Description Query transaction status and decoded events by transaction hash
+// @Tags Common
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.TxQueryRequest true "Transaction query payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/chain-data/{networkCode}/common/tx-query [post]
 func (ctl *ConnectorController) TxQuery(c *gin.Context) {
 	var req models.TxQueryRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	resp, err := ctl.eth.QueryTransaction(c.Request.Context(), c.Param("networkCode"), req.TxCode)
+	resp, err := ctl.eth.QueryTransaction(c.Request.Context(), req.TxCode)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -70,12 +93,23 @@ func (ctl *ConnectorController) TxQuery(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(resp))
 }
 
+// AddressBalance godoc
+// @Summary Query address balance
+// @Description Query native token balance of an address on the configured network
+// @Tags Common
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.AddressBalanceRequest true "Address balance query payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/chain-data/{networkCode}/common/address-balance [post]
 func (ctl *ConnectorController) AddressBalance(c *gin.Context) {
 	var req models.AddressBalanceRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	resp, err := ctl.eth.GetAddressBalance(c.Request.Context(), c.Param("networkCode"), req.Address)
+	resp, err := ctl.eth.GetAddressBalance(c.Request.Context(), req.Address)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -83,8 +117,17 @@ func (ctl *ConnectorController) AddressBalance(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(resp))
 }
 
+// LatestBlock godoc
+// @Summary Query latest block
+// @Description Query latest block number and timestamp from the configured network
+// @Tags Common
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/chain-data/{networkCode}/common/latest-block [post]
 func (ctl *ConnectorController) LatestBlock(c *gin.Context) {
-	resp, err := ctl.eth.GetLatestBlock(c.Request.Context(), c.Param("networkCode"))
+	resp, err := ctl.eth.GetLatestBlock(c.Request.Context())
 	if err != nil {
 		writeError(c, err)
 		return
@@ -92,12 +135,23 @@ func (ctl *ConnectorController) LatestBlock(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(resp))
 }
 
+// TokenSupply godoc
+// @Summary Query token supply
+// @Description Query total supply of a token configured in the database-backed EVM token registry
+// @Tags Common
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.TokenSupplyRequest true "Token supply query payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/chain-data/{networkCode}/common/token-supply [post]
 func (ctl *ConnectorController) TokenSupply(c *gin.Context) {
 	var req models.TokenSupplyRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	resp, err := ctl.eth.GetTokenSupply(c.Request.Context(), c.Param("networkCode"), req.TokenCode)
+	resp, err := ctl.eth.GetTokenSupply(c.Request.Context(), req.TokenCode)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -105,12 +159,23 @@ func (ctl *ConnectorController) TokenSupply(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(resp))
 }
 
+// TokenBalance godoc
+// @Summary Query token balance
+// @Description Query token balance of an address for a token configured in the database-backed EVM token registry
+// @Tags Common
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.TokenBalanceRequest true "Token balance query payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/chain-data/{networkCode}/common/token-balance [post]
 func (ctl *ConnectorController) TokenBalance(c *gin.Context) {
 	var req models.TokenBalanceRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	resp, err := ctl.eth.GetTokenBalance(c.Request.Context(), c.Param("networkCode"), req.TokenCode, req.Address)
+	resp, err := ctl.eth.GetTokenBalance(c.Request.Context(), req.TokenCode, req.Address)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -118,12 +183,118 @@ func (ctl *ConnectorController) TokenBalance(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(resp))
 }
 
+// TokenAdd godoc
+// @Summary Add or update token
+// @Description Add a token definition into database-backed EVM token registry.
+// @Tags Common
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.TokenAddRequest true "Token add request"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.ErrorResponse
+// @Router /inner/chain-data/{networkCode}/common/token-add [post]
+func (ctl *ConnectorController) TokenAdd(c *gin.Context) {
+	var req models.TokenAddRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	resp, err := ctl.tokens.Add(req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, models.Success(resp))
+}
+
+// TokenDelete godoc
+// @Summary Delete token
+// @Description Delete a token definition from database-backed EVM token registry by token code.
+// @Tags Common
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.TokenDeleteRequest true "Token delete request"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.ErrorResponse
+// @Router /inner/chain-data/{networkCode}/common/token-delete [post]
+func (ctl *ConnectorController) TokenDelete(c *gin.Context) {
+	var req models.TokenDeleteRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	if err := ctl.tokens.Delete(req.TokenCode); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, models.Success(struct{}{}))
+}
+
+// TokenGet godoc
+// @Summary Get token
+// @Description Get a token definition from database-backed EVM token registry by token code.
+// @Tags Common
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.TokenGetRequest true "Token get request"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.ErrorResponse
+// @Router /inner/chain-data/{networkCode}/common/token-get [post]
+func (ctl *ConnectorController) TokenGet(c *gin.Context) {
+	var req models.TokenGetRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	resp, err := ctl.tokens.Get(req.TokenCode)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, models.Success(resp))
+}
+
+// TokenList godoc
+// @Summary List tokens
+// @Description List token definitions from database-backed EVM token registry.
+// @Tags Common
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.TokenListRequest true "Token list request"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.ErrorResponse
+// @Router /inner/chain-data/{networkCode}/common/token-list [post]
+func (ctl *ConnectorController) TokenList(c *gin.Context) {
+	var req models.TokenListRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	resp, err := ctl.tokens.List()
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, models.Success(models.TokenListResponse{Tokens: resp}))
+}
+
+// Faucet godoc
+// @Summary Send native token
+// @Description Create and submit a native token transfer from the configured wallet
+// @Tags Wallet
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.BalanceChargeRequest true "Wallet transfer payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/chain-invoke/{networkCode}/wallet/faucet [post]
 func (ctl *ConnectorController) Faucet(c *gin.Context) {
 	var req models.BalanceChargeRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	record, err := ctl.wallet.CreateNativeCharge(c.Request.Context(), c.Param("networkCode"), req)
+	record, err := ctl.wallet.CreateNativeCharge(c.Request.Context(), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -132,144 +303,125 @@ func (ctl *ConnectorController) Faucet(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(record))
 }
 
-func (ctl *ConnectorController) DttSendSettle(c *gin.Context) {
-	var req models.SettleRequest
-	if !bindJSON(c, &req) {
-		return
-	}
-	record, err := ctl.scplus.DttSendSettle(c.Request.Context(), c.Param("networkCode"), req)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, models.Success(record))
-}
-
-func (ctl *ConnectorController) AutoReject(c *gin.Context) {
-	var req models.AutoRejectRequest
-	if !bindJSON(c, &req) {
-		return
-	}
-	record, err := ctl.scplus.AutoReject(c.Request.Context(), c.Param("networkCode"), req)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, models.Success(record))
-}
-
-func (ctl *ConnectorController) InstantOnRamp(c *gin.Context) {
-	var req models.InstantOnRampRequest
-	if !bindJSON(c, &req) {
-		return
-	}
-	record, err := ctl.scplus.InstantOnRamp(c.Request.Context(), c.Param("networkCode"), req)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, models.Success(record))
-}
-
-func (ctl *ConnectorController) Issue(c *gin.Context) {
-	var req models.IssueInvokeRequest
-	if !bindJSON(c, &req) {
-		return
-	}
-	record, err := ctl.scplus.Issue(c.Request.Context(), c.Param("networkCode"), req)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, models.Success(record))
-}
-
-func (ctl *ConnectorController) QueryIssue(c *gin.Context) {
-	ctl.queryOnchain(c, "SCPLUS_ISSUE")
-}
-
-func (ctl *ConnectorController) Finance(c *gin.Context) {
-	var req models.FinanceInvokeRequest
-	if !bindJSON(c, &req) {
-		return
-	}
-	record, err := ctl.scplus.Finance(c.Request.Context(), c.Param("networkCode"), req)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, models.Success(record))
-}
-
-func (ctl *ConnectorController) QueryFinance(c *gin.Context) {
-	ctl.queryOnchain(c, "SCPLUS_FINANCE")
-}
-
-func (ctl *ConnectorController) IssueF(c *gin.Context) {
-	var req models.IssueAndFinanceInvokeRequest
-	if !bindJSON(c, &req) {
-		return
-	}
-	record, err := ctl.scplus.IssueF(c.Request.Context(), c.Param("networkCode"), req)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, models.Success(record))
-}
-
-func (ctl *ConnectorController) QueryIssueF(c *gin.Context) {
-	ctl.queryOnchain(c, "SCPLUS_ISSUE_AND_FINANCE")
-}
-
+// TxSubscribe godoc
+// @Summary Subscribe transaction
+// @Description Register a transaction subscription for callback processing
+// @Tags Subscription
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.TxSubscribeRequest true "Transaction subscription payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/chain-data-subscribe/{networkCode}/tx-subscribe [post]
 func (ctl *ConnectorController) TxSubscribe(c *gin.Context) {
 	var req models.TxSubscribeRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	ctl.subscriptions.AddTx(c.Param("networkCode"), req)
+	ctl.subscriptions.AddTx(req)
 	c.JSON(http.StatusOK, models.Success(struct{}{}))
 }
 
+// AddressSubscribe godoc
+// @Summary Subscribe address
+// @Description Register an address scan subscription for callback processing
+// @Tags Subscription
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.AddressSubscribeRequest true "Address subscription payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/chain-data-subscribe/{networkCode}/address-subscribe [post]
 func (ctl *ConnectorController) AddressSubscribe(c *gin.Context) {
 	var req models.AddressSubscribeRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	ctl.subscriptions.AddAddress(c.Param("networkCode"), req)
+	ctl.subscriptions.AddAddress(req)
 	c.JSON(http.StatusOK, models.Success(struct{}{}))
 }
 
+// TxSubscribeCancel godoc
+// @Summary Cancel transaction subscription
+// @Description Cancel a registered transaction subscription
+// @Tags Subscription
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.TxSubscribeCancelRequest true "Transaction subscription cancel payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/chain-data-subscribe/{networkCode}/tx-subscribe-cancel [post]
 func (ctl *ConnectorController) TxSubscribeCancel(c *gin.Context) {
 	var req models.TxSubscribeCancelRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	ctl.subscriptions.RemoveTx(c.Param("networkCode"), req.TxCode)
+	ctl.subscriptions.RemoveTx(req.TxCode)
 	c.JSON(http.StatusOK, models.Success(struct{}{}))
 }
 
+// AddressSubscribeCancel godoc
+// @Summary Cancel address subscription
+// @Description Update or stop an address scan subscription
+// @Tags Subscription
+// @Accept json
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Param request body models.AddressSubscribeCancelRequest true "Address subscription cancel payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/chain-data-subscribe/{networkCode}/address-subscribe-cancel [post]
 func (ctl *ConnectorController) AddressSubscribeCancel(c *gin.Context) {
 	var req models.AddressSubscribeCancelRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	ctl.subscriptions.RemoveAddress(c.Param("networkCode"), req)
+	ctl.subscriptions.RemoveAddress(req)
 	c.JSON(http.StatusOK, models.Success(struct{}{}))
 }
 
+// ContractList godoc
+// @Summary List current contracts
+// @Description Query currently applied contract configurations for the configured network
+// @Tags Contract
+// @Produce json
+// @Param networkCode path string true "Configured network code"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/contract/{networkCode}/list [post]
 func (ctl *ConnectorController) ContractList(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(models.ContractListResponse{
-		ContractInfos: ctl.contracts.ListContracts(c.Param("networkCode")),
+		ContractInfos: ctl.contracts.ListContracts(),
 	}))
 }
 
+// Web3ContractInfo godoc
+// @Summary List web3 contract info
+// @Description Query current contract and network info for web3 clients
+// @Tags Contract
+// @Produce json
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /open/all-clients/contract/web3-contract-info [post]
 func (ctl *ConnectorController) Web3ContractInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(models.Web3ContractInfoResponse{
 		Web3ContractInfos: ctl.contracts.ListWeb3Contracts(),
 	}))
 }
 
+// ContractPush godoc
+// @Summary Push contract config
+// @Description Create a contract configuration push record
+// @Tags Contract
+// @Accept json
+// @Produce json
+// @Param request body models.ContractConfigPushMessage true "Contract config push payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /inner/contract/contract-config-push-record/push [post]
 func (ctl *ConnectorController) ContractPush(c *gin.Context) {
 	var req models.ContractConfigPushMessage
 	if !bindJSON(c, &req) {
@@ -279,6 +431,16 @@ func (ctl *ConnectorController) ContractPush(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(struct{}{}))
 }
 
+// ContractPushApply godoc
+// @Summary Apply contract config push
+// @Description Apply a pushed contract configuration record into current contract config
+// @Tags Contract
+// @Accept json
+// @Produce json
+// @Param request body models.ApplyContractConfigPushRecordRequest true "Apply contract push payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /open/ops-client/contract/contract-config-push-record/apply [post]
 func (ctl *ConnectorController) ContractPushApply(c *gin.Context) {
 	var req models.ApplyContractConfigPushRecordRequest
 	if !bindJSON(c, &req) {
@@ -291,25 +453,22 @@ func (ctl *ConnectorController) ContractPushApply(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(struct{}{}))
 }
 
+// ContractPushPage godoc
+// @Summary Page contract config push records
+// @Description Query paged contract configuration push records
+// @Tags Contract
+// @Accept json
+// @Produce json
+// @Param request body object true "Contract push page query payload"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.Response
+// @Router /open/ops-client/contract/contract-config-push-record/page [post]
 func (ctl *ConnectorController) ContractPushPage(c *gin.Context) {
 	var req models.PageRequest[models.ContractConfigPushRecordQuery]
 	if !bindJSON(c, &req) {
 		return
 	}
 	c.JSON(http.StatusOK, models.Success(ctl.contracts.PagePushRecords(req)))
-}
-
-func (ctl *ConnectorController) queryOnchain(c *gin.Context, kind string) {
-	var req models.BusinessQueryRequest
-	if !bindJSON(c, &req) {
-		return
-	}
-	resp, err := ctl.onchain.Get(kind, req.BusinessID)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, models.Success(resp))
 }
 
 func bindJSON(c *gin.Context, out interface{}) bool {

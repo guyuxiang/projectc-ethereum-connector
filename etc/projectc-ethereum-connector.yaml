@@ -13,24 +13,17 @@ mysql:
   dsn: ""
   maxIdleConns: 10
   maxOpenConns: 20
-rabbitmq:
-  url: ""
-  exchange: "projectc-ethereum-connector.exchange"
-  exchangeType: "direct"
-  queue: "projectc-ethereum-connector.queue"
-  routingKey: "projectc-ethereum-connector.queue"
-  txCallbackExchange: "tx_callback_fanout_exchange"
-  txCallbackExchangeType: "fanout"
-  txCallbackCancelExchange: "tx_callback_cancel_fanout_exchange"
-  txCallbackCancelExchangeType: "fanout"
+callback:
+  mode: "http"
+  txHttpUrl: "http://unblock-custodial-wallet/api/v1/inner/wallet/callback/tx"
+  rollbackHttpUrl: "http://unblock-custodial-wallet/api/v1/inner/wallet/callback/rollback"
 connector:
   requireAuthOnBusiness: true
-  wallets: []
-  onchains: []
+  wallet: {}
 ethereum:
-  networks:
-    - code: "sepolia"
-      rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com"
-      chainId: 11155111
-      blockchainExplorerUrl: "https://sepolia.etherscan.io"
+  network:
+    code: "sepolia"
+    rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com"
+    chainId: 11155111
+    blockchainExplorerUrl: "https://sepolia.etherscan.io"
   contracts: []

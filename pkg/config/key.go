@@ -13,9 +13,4 @@ const (
 	FLAG_KEY_MYSQL_DSN      = "mysql.dsn"
 	FLAG_KEY_MYSQL_MAX_IDLE = "mysql.maxIdleConns"
 	FLAG_KEY_MYSQL_MAX_OPEN = "mysql.maxOpenConns"
-	FLAG_KEY_RABBIT_URL     = "rabbitmq.url"
-	FLAG_KEY_RABBIT_EXCH    = "rabbitmq.exchange"
-	FLAG_KEY_RABBIT_TYPE    = "rabbitmq.exchangeType"
-	FLAG_KEY_RABBIT_QUEUE   = "rabbitmq.queue"
-	FLAG_KEY_RABBIT_ROUTING = "rabbitmq.routingKey"
 )

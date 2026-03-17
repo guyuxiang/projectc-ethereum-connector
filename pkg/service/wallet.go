@@ -18,7 +18,7 @@ import (
 )
 
 type WalletService interface {
-	CreateNativeCharge(ctx context.Context, networkCode string, req models.BalanceChargeRequest) (*models.OnchainRecordResponse, error)
+	CreateNativeCharge(ctx context.Context, req models.BalanceChargeRequest) (*models.OnchainRecordResponse, error)
 }
 
 type walletService struct {
@@ -33,19 +33,20 @@ func NewWalletService(onchain OnchainRecordService) WalletService {
 	}
 }
 
-func (s *walletService) CreateNativeCharge(ctx context.Context, networkCode string, req models.BalanceChargeRequest) (*models.OnchainRecordResponse, error) {
-	record, err := s.createNativeChargePrepared(ctx, networkCode, req, nil)
+func (s *walletService) CreateNativeCharge(ctx context.Context, req models.BalanceChargeRequest) (*models.OnchainRecordResponse, error) {
+	record, err := s.createNativeChargePrepared(ctx, req, nil)
 	if err != nil {
 		return nil, err
 	}
 	return s.onchain.CreatePrepared(*record)
 }
 
-func (s *walletService) createNativeChargePrepared(ctx context.Context, networkCode string, req models.BalanceChargeRequest, nonceOverride *uint64) (*PreparedOnchainRecord, error) {
-	walletCfg, networkCfg, err := findWalletConfig(networkCode)
+func (s *walletService) createNativeChargePrepared(ctx context.Context, req models.BalanceChargeRequest, nonceOverride *uint64) (*PreparedOnchainRecord, error) {
+	walletCfg, networkCfg, err := findWalletConfig()
 	if err != nil {
 		return nil, err
 	}
+	networkCode := networkCfg.Code
 
 	client, err := ethclient.DialContext(ctx, networkCfg.RPCURL)
 	if err != nil {
@@ -134,30 +135,19 @@ func (s *walletService) createNativeChargePrepared(ctx context.Context, networkC
 	return &record, nil
 }
 
-func findWalletConfig(networkCode string) (config.WalletSigner, config.NetworkConfig, error) {
+func findWalletConfig() (config.WalletSigner, config.NetworkConfig, error) {
 	cfg := config.GetConfig()
-	var walletCfg config.WalletSigner
-	foundWallet := false
-	if cfg.Connector != nil {
-		for _, wallet := range cfg.Connector.Wallets {
-			if wallet.NetworkCode == networkCode {
-				walletCfg = wallet
-				foundWallet = true
-				break
-			}
-		}
-	}
-	if !foundWallet {
+	if cfg.Connector == nil {
 		return config.WalletSigner{}, config.NetworkConfig{}, errors.New("wallet config not found")
 	}
-	if cfg.Ethereum != nil {
-		for _, network := range cfg.Ethereum.Networks {
-			if network.Code == networkCode {
-				return walletCfg, network, nil
-			}
-		}
+	network, err := configuredNetwork()
+	if err != nil {
+		return config.WalletSigner{}, config.NetworkConfig{}, err
 	}
-	return config.WalletSigner{}, config.NetworkConfig{}, errors.New("network config not found")
+	if cfg.Connector.Wallet.PrivateKey == "" {
+		return config.WalletSigner{}, config.NetworkConfig{}, errors.New("wallet config not found")
+	}
+	return cfg.Connector.Wallet, network, nil
 }
 
 func mustJSON(v interface{}) string {

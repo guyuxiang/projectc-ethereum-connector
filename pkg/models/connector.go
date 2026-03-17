@@ -51,6 +51,32 @@ type TokenBalanceResponse struct {
 	Value RawNumber `json:"value"`
 }
 
+type TokenAddRequest struct {
+	TokenCode    string `json:"tokenCode"`
+	TokenAddress string `json:"tokenAddress"`
+}
+
+type TokenGetRequest struct {
+	TokenCode string `json:"tokenCode"`
+}
+
+type TokenDeleteRequest struct {
+	TokenCode string `json:"tokenCode"`
+}
+
+type TokenListRequest struct {
+}
+
+type TokenInfo struct {
+	TokenCode    string `json:"tokenCode"`
+	NetworkCode  string `json:"networkCode"`
+	TokenAddress string `json:"tokenAddress"`
+}
+
+type TokenListResponse struct {
+	Tokens []TokenInfo `json:"tokens"`
+}
+
 type BalanceChargeRequest struct {
 	ReceiverAddress string      `json:"receiverAddress"`
 	IdempotencyKey  string      `json:"idempotencyKey"`
@@ -63,52 +89,6 @@ type OnchainRecordResponse struct {
 	ResponseBusiData string   `json:"responseBusiData"`
 	ChainTxData      *ChainTx `json:"chainTxData"`
 	TxCode           string   `json:"txCode"`
-}
-
-type SettleRequest struct {
-	BusinessID string `json:"businessId"`
-}
-
-type AutoRejectRequest struct {
-	TransferRefID string `json:"transferRefId"`
-}
-
-type InstantOnRampRequest struct {
-	BusinessID   string      `json:"businessId"`
-	ContractCode string      `json:"contractCode"`
-	Requester    string      `json:"requester"`
-	Value        json.Number `json:"value"`
-	Extension    string      `json:"extension"`
-}
-
-type IssueInvokeRequest struct {
-	ObligorID     string      `json:"obligorId"`
-	BeneficiaryID string      `json:"beneficiaryId"`
-	Amount        json.Number `json:"amount"`
-	DueTime       int64       `json:"dueTime"`
-	Extension     string      `json:"extension"`
-	BusinessID    string      `json:"businessId"`
-}
-
-type BusinessQueryRequest struct {
-	BusinessID string `json:"businessId"`
-}
-
-type FinanceInvokeRequest struct {
-	FinanceBusinessID string `json:"financeBusinessId"`
-	IssueBusinessID   string `json:"issueBusinessId"`
-	FunderID          string `json:"funderId"`
-	Extension         string `json:"extension"`
-}
-
-type IssueAndFinanceInvokeRequest struct {
-	ObligorID     string      `json:"obligorId"`
-	BeneficiaryID string      `json:"beneficiaryId"`
-	FunderID      string      `json:"funderId"`
-	Amount        json.Number `json:"amount"`
-	DueTime       int64       `json:"dueTime"`
-	Extension     string      `json:"extension"`
-	BusinessID    string      `json:"businessId"`
 }
 
 type TxSubscribeRequest struct {

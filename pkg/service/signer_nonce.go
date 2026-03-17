@@ -1,7 +1,6 @@
 package service
 
 import (
-	"sync"
 	"time"
 
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/mysql"
@@ -15,35 +14,14 @@ type SignerNonceService interface {
 	ResetNextNonce(signerAddress, networkCode string, nextNonce uint64) error
 }
 
-type signerNonceService struct {
-	mu      sync.Mutex
-	memData map[string]uint64
-}
+type signerNonceService struct{}
 
 func NewSignerNonceService() SignerNonceService {
-	return &signerNonceService{memData: map[string]uint64{}}
+	return &signerNonceService{}
 }
 
 func (s *signerNonceService) GetAndIncrementNonce(signerAddress, networkCode string, fetchChainNonce func() (uint64, error)) (uint64, error) {
-	if mysql.DB() != nil {
-		return s.getAndIncrementNonceDB(signerAddress, networkCode, fetchChainNonce)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	key := signerAddress + ":" + networkCode
-	if current, ok := s.memData[key]; ok {
-		s.memData[key] = current + 1
-		return current + 1, nil
-	}
-
-	chainNonce, err := fetchChainNonce()
-	if err != nil {
-		return 0, err
-	}
-	s.memData[key] = chainNonce
-	return chainNonce, nil
+	return s.getAndIncrementNonceDB(signerAddress, networkCode, fetchChainNonce)
 }
 
 func (s *signerNonceService) getAndIncrementNonceDB(signerAddress, networkCode string, fetchChainNonce func() (uint64, error)) (uint64, error) {
@@ -86,15 +64,7 @@ func (s *signerNonceService) ResetNextNonce(signerAddress, networkCode string, n
 	if nextNonce == 0 {
 		return nil
 	}
-	if mysql.DB() != nil {
-		return s.resetNextNonceDB(signerAddress, networkCode, nextNonce)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.memData[signerAddress+":"+networkCode] = nextNonce - 1
-	return nil
+	return s.resetNextNonceDB(signerAddress, networkCode, nextNonce)
 }
 
 func (s *signerNonceService) resetNextNonceDB(signerAddress, networkCode string, nextNonce uint64) error {

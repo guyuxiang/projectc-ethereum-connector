@@ -36,29 +36,4 @@ var flagsOpts = []flagOpt{
 		optDefaultValue: 20,
 		optUsage:        "mysql max open connections",
 	},
-	{
-		optName:         FLAG_KEY_RABBIT_URL,
-		optDefaultValue: "",
-		optUsage:        "rabbitmq connection url",
-	},
-	{
-		optName:         FLAG_KEY_RABBIT_EXCH,
-		optDefaultValue: "",
-		optUsage:        "rabbitmq exchange",
-	},
-	{
-		optName:         FLAG_KEY_RABBIT_TYPE,
-		optDefaultValue: "direct",
-		optUsage:        "rabbitmq exchange type",
-	},
-	{
-		optName:         FLAG_KEY_RABBIT_QUEUE,
-		optDefaultValue: "",
-		optUsage:        "rabbitmq queue",
-	},
-	{
-		optName:         FLAG_KEY_RABBIT_ROUTING,
-		optDefaultValue: "",
-		optUsage:        "rabbitmq routing key",
-	},
 }

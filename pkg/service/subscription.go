@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
 	"strings"
 	"time"
 
@@ -15,15 +17,14 @@ import (
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/config"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/models"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/mysql"
-	"github.com/guyuxiang/projectc-ethereum-connector/pkg/rabbitmq"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/store"
 )
 
 type SubscriptionService interface {
-	AddTx(networkCode string, req models.TxSubscribeRequest)
-	RemoveTx(networkCode, txCode string)
-	AddAddress(networkCode string, req models.AddressSubscribeRequest)
-	RemoveAddress(networkCode string, req models.AddressSubscribeCancelRequest)
+	AddTx(req models.TxSubscribeRequest)
+	RemoveTx(txCode string)
+	AddAddress(req models.AddressSubscribeRequest)
+	RemoveAddress(req models.AddressSubscribeCancelRequest)
 	Refresh(ctx context.Context) error
 }
 
@@ -35,10 +36,8 @@ func NewSubscriptionService(eth EthereumService) SubscriptionService {
 	return &subscriptionService{eth: eth}
 }
 
-func (s *subscriptionService) AddTx(networkCode string, req models.TxSubscribeRequest) {
-	if mysql.DB() == nil {
-		return
-	}
+func (s *subscriptionService) AddTx(req models.TxSubscribeRequest) {
+	networkCode := configuredNetworkCode()
 	code := fmt.Sprintf("%s_%s", networkCode, req.TxCode)
 	row := store.TxSubscriptionPO{
 		Code:         code,
@@ -50,17 +49,13 @@ func (s *subscriptionService) AddTx(networkCode string, req models.TxSubscribeRe
 	mysql.DB().Where("code = ?", code).Assign(row).FirstOrCreate(&row)
 }
 
-func (s *subscriptionService) RemoveTx(networkCode, txCode string) {
-	if mysql.DB() == nil {
-		return
-	}
+func (s *subscriptionService) RemoveTx(txCode string) {
+	networkCode := configuredNetworkCode()
 	mysql.DB().Model(&store.TxSubscriptionPO{}).Where("network_code = ? and tx_code = ?", networkCode, txCode).Update("status", "CANCELLED")
 }
 
-func (s *subscriptionService) AddAddress(networkCode string, req models.AddressSubscribeRequest) {
-	if mysql.DB() == nil {
-		return
-	}
+func (s *subscriptionService) AddAddress(req models.AddressSubscribeRequest) {
+	networkCode := configuredNetworkCode()
 	code := fmt.Sprintf("%s_%s", networkCode, req.Address)
 	row := store.AddressSubscriptionPO{
 		Code:             code,
@@ -77,19 +72,14 @@ func (s *subscriptionService) AddAddress(networkCode string, req models.AddressS
 	}).FirstOrCreate(&row)
 }
 
-func (s *subscriptionService) RemoveAddress(networkCode string, req models.AddressSubscribeCancelRequest) {
-	if mysql.DB() == nil {
-		return
-	}
+func (s *subscriptionService) RemoveAddress(req models.AddressSubscribeCancelRequest) {
+	networkCode := configuredNetworkCode()
 	mysql.DB().Model(&store.AddressSubscriptionPO{}).
 		Where("network_code = ? and address = ?", networkCode, req.Address).
 		Updates(map[string]interface{}{"end_block_number": req.EndBlockNumber, "status": "ACTIVE"})
 }
 
 func (s *subscriptionService) Refresh(ctx context.Context) error {
-	if mysql.DB() == nil {
-		return nil
-	}
 	if err := s.expireTxSubscriptions(); err != nil {
 		return err
 	}
@@ -114,7 +104,7 @@ func (s *subscriptionService) refreshTxSubscriptions(ctx context.Context) error 
 		return err
 	}
 	for _, row := range rows {
-		resp, err := s.eth.QueryTransaction(ctx, row.NetworkCode, row.TxCode)
+		resp, err := s.eth.QueryTransaction(ctx, row.TxCode)
 		if err != nil || resp == nil || !resp.IfTxOnchain || resp.Tx == nil || resp.Tx.BlockNumber == 0 {
 			continue
 		}
@@ -181,11 +171,11 @@ func (s *subscriptionService) checkTxCallbacks(ctx context.Context) error {
 		return err
 	}
 	for _, row := range rows {
-		resp, err := s.eth.QueryTransaction(ctx, row.NetworkCode, row.TxCode)
+		resp, err := s.eth.QueryTransaction(ctx, row.TxCode)
 		if err != nil {
 			continue
 		}
-		latest, latestErr := s.eth.GetLatestBlock(ctx, row.NetworkCode)
+		latest, latestErr := s.eth.GetLatestBlock(ctx)
 		if latestErr != nil || latest == nil {
 			continue
 		}
@@ -232,7 +222,7 @@ func (s *subscriptionService) refreshAddressSubscriptions(ctx context.Context) e
 		return err
 	}
 	for _, row := range rows {
-		network, err := findNetworkConfig(row.NetworkCode)
+		network, err := configuredNetwork()
 		if err != nil {
 			continue
 		}
@@ -276,7 +266,7 @@ func (s *subscriptionService) refreshAddressSubscriptions(ctx context.Context) e
 				}
 				if from == target || to == target || receiptMatchesAddress(receipt, target) {
 					discoveredTxCodes[tx.Hash().Hex()] = struct{}{}
-					s.AddTx(row.NetworkCode, models.TxSubscribeRequest{
+					s.AddTx(models.TxSubscribeRequest{
 						TxCode: tx.Hash().Hex(),
 						SubscribeRange: models.TxSubscribeRange{
 							EndTimestamp: time.Now().Add(24 * time.Hour).UnixMilli(),
@@ -334,7 +324,7 @@ func receiptMatchesAddress(receipt *types.Receipt, target common.Address) bool {
 }
 
 func (s *subscriptionService) createAddressSyncWaitingCheck(networkCode, address string, startBlock, endBlock uint64, txCodes map[string]struct{}) {
-	if mysql.DB() == nil || endBlock < startBlock {
+	if endBlock < startBlock {
 		return
 	}
 	addresses, _ := json.Marshal([]string{strings.ToLower(address)})
@@ -371,7 +361,7 @@ func (s *subscriptionService) checkAddressSyncs(ctx context.Context) error {
 		return err
 	}
 	for _, row := range rows {
-		latest, err := s.eth.GetLatestBlock(ctx, row.NetworkCode)
+		latest, err := s.eth.GetLatestBlock(ctx)
 		if err != nil || latest == nil {
 			continue
 		}
@@ -389,7 +379,7 @@ func (s *subscriptionService) checkAddressSyncs(ctx context.Context) error {
 			if _, ok := existing[txCode]; ok {
 				continue
 			}
-			s.AddTx(row.NetworkCode, models.TxSubscribeRequest{
+			s.AddTx(models.TxSubscribeRequest{
 				TxCode: txCode,
 				SubscribeRange: models.TxSubscribeRange{
 					EndTimestamp: time.Now().Add(24 * time.Hour).UnixMilli(),
@@ -407,7 +397,7 @@ func (s *subscriptionService) scanAddressTxs(ctx context.Context, networkCode st
 	if len(addresses) == 0 || endBlock < startBlock {
 		return result, nil
 	}
-	network, err := findNetworkConfig(networkCode)
+	network, err := configuredNetwork()
 	if err != nil {
 		return nil, err
 	}
@@ -501,17 +491,52 @@ func hashPayload(payload []byte) string {
 }
 
 func publishTxCallback(body []byte) error {
-	cfg := config.GetConfig()
-	if cfg.RabbitMQ != nil && cfg.RabbitMQ.TxCallbackExchange != "" {
-		return rabbitmq.PublishToWithType(cfg.RabbitMQ.TxCallbackExchange, cfg.RabbitMQ.TxCallbackExchangeType, "", body)
-	}
-	return rabbitmq.Publish(body)
+	return publishHTTPCallback(body, callbackKindTx)
 }
 
 func publishCancelCallback(body []byte) error {
+	return publishHTTPCallback(body, callbackKindRollback)
+}
+
+const (
+	callbackKindTx       = "tx"
+	callbackKindRollback = "rollback"
+)
+
+func publishHTTPCallback(body []byte, kind string) error {
 	cfg := config.GetConfig()
-	if cfg.RabbitMQ != nil && cfg.RabbitMQ.TxCallbackCancelExchange != "" {
-		return rabbitmq.PublishToWithType(cfg.RabbitMQ.TxCallbackCancelExchange, cfg.RabbitMQ.TxCallbackCancelExchangeType, "", body)
+	if cfg.Callback == nil || !strings.EqualFold(cfg.Callback.Mode, "http") {
+		return fmt.Errorf("http callback mode is not enabled")
 	}
-	return rabbitmq.Publish(body)
+
+	targetURL := strings.TrimSpace(cfg.Callback.TxHTTPURL)
+	if kind == callbackKindRollback {
+		targetURL = strings.TrimSpace(cfg.Callback.RollbackHTTPURL)
+	}
+	if targetURL == "" {
+		if kind == callbackKindRollback {
+			return fmt.Errorf("callback.rollbackHttpUrl is required when callback.mode=http")
+		}
+		return fmt.Errorf("callback.txHttpUrl is required when callback.mode=http")
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest(http.MethodPost, targetURL, strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+
+	payload, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return fmt.Errorf("http callback failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(payload)))
 }

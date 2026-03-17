@@ -8,6 +8,8 @@ type Response struct {
 	Data    interface{} `json:"data"`
 }
 
+type ErrorResponse = Response
+
 func Success(data interface{}) Response {
 	return Response{Code: 0, Message: "success", Data: data}
 }

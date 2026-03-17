@@ -21,46 +21,43 @@ import (
 )
 
 type EthereumService interface {
-	SendRawTransaction(ctx context.Context, networkCode, signedTx string) (string, error)
-	QueryTransaction(ctx context.Context, networkCode, txHash string) (*models.TxQueryResponse, error)
-	GetAddressBalance(ctx context.Context, networkCode, address string) (*models.AddressBalanceResponse, error)
-	GetLatestBlock(ctx context.Context, networkCode string) (*models.LatestBlockResponse, error)
-	GetTokenSupply(ctx context.Context, networkCode, tokenCode string) (*models.TokenSupplyResponse, error)
-	GetTokenBalance(ctx context.Context, networkCode, tokenCode, address string) (*models.TokenBalanceResponse, error)
+	SendRawTransaction(ctx context.Context, signedTx string) (string, error)
+	QueryTransaction(ctx context.Context, txHash string) (*models.TxQueryResponse, error)
+	GetAddressBalance(ctx context.Context, address string) (*models.AddressBalanceResponse, error)
+	GetLatestBlock(ctx context.Context) (*models.LatestBlockResponse, error)
+	GetTokenSupply(ctx context.Context, tokenCode string) (*models.TokenSupplyResponse, error)
+	GetTokenBalance(ctx context.Context, tokenCode, address string) (*models.TokenBalanceResponse, error)
 }
 
 type ethereumService struct {
 	client    *http.Client
-	networks  map[string]config.NetworkConfig
+	network   config.NetworkConfig
 	contracts ContractRegistryService
+	tokens    TokenRegistryService
 }
 
-func NewEthereumService(contracts ContractRegistryService) EthereumService {
-	cfg := config.GetConfig()
-	networks := make(map[string]config.NetworkConfig)
-	if cfg.Ethereum != nil {
-		for _, network := range cfg.Ethereum.Networks {
-			networks[network.Code] = network
-		}
-	}
+func NewEthereumService(contracts ContractRegistryService, tokens TokenRegistryService) EthereumService {
+	network, _ := configuredNetwork()
 	return &ethereumService{
 		client:    &http.Client{Timeout: 15 * time.Second},
-		networks:  networks,
+		network:   network,
 		contracts: contracts,
+		tokens:    tokens,
 	}
 }
 
-func (s *ethereumService) SendRawTransaction(ctx context.Context, networkCode, signedTx string) (string, error) {
+func (s *ethereumService) SendRawTransaction(ctx context.Context, signedTx string) (string, error) {
 	var txHash string
-	if err := s.rpcCall(ctx, networkCode, "eth_sendRawTransaction", []interface{}{signedTx}, &txHash); err != nil {
+	if err := s.rpcCall(ctx, "eth_sendRawTransaction", []interface{}{signedTx}, &txHash); err != nil {
 		return "", err
 	}
 	return txHash, nil
 }
 
-func (s *ethereumService) QueryTransaction(ctx context.Context, networkCode, txHash string) (*models.TxQueryResponse, error) {
+func (s *ethereumService) QueryTransaction(ctx context.Context, txHash string) (*models.TxQueryResponse, error) {
+	networkCode := s.network.Code
 	var tx rpcTransaction
-	if err := s.rpcCall(ctx, networkCode, "eth_getTransactionByHash", []interface{}{txHash}, &tx); err != nil {
+	if err := s.rpcCall(ctx, "eth_getTransactionByHash", []interface{}{txHash}, &tx); err != nil {
 		if errors.Is(err, errRPCNullResult) {
 			return &models.TxQueryResponse{IfTxOnchain: false}, nil
 		}
@@ -68,7 +65,7 @@ func (s *ethereumService) QueryTransaction(ctx context.Context, networkCode, txH
 	}
 
 	var receipt rpcReceipt
-	if err := s.rpcCall(ctx, networkCode, "eth_getTransactionReceipt", []interface{}{txHash}, &receipt); err != nil {
+	if err := s.rpcCall(ctx, "eth_getTransactionReceipt", []interface{}{txHash}, &receipt); err != nil {
 		if !errors.Is(err, errRPCNullResult) {
 			return nil, err
 		}
@@ -76,7 +73,7 @@ func (s *ethereumService) QueryTransaction(ctx context.Context, networkCode, txH
 
 	blockTimestamp := uint64(0)
 	if receipt.BlockNumber != "" {
-		block, err := s.getBlockByNumber(ctx, networkCode, receipt.BlockNumber)
+		block, err := s.getBlockByNumber(ctx, receipt.BlockNumber)
 		if err == nil {
 			blockTimestamp = hexUint64(block.Timestamp) * 1000
 		}
@@ -122,9 +119,9 @@ func (s *ethereumService) QueryTransaction(ctx context.Context, networkCode, txH
 	return result, nil
 }
 
-func (s *ethereumService) GetAddressBalance(ctx context.Context, networkCode, address string) (*models.AddressBalanceResponse, error) {
+func (s *ethereumService) GetAddressBalance(ctx context.Context, address string) (*models.AddressBalanceResponse, error) {
 	var balanceHex string
-	if err := s.rpcCall(ctx, networkCode, "eth_getBalance", []interface{}{address, "latest"}, &balanceHex); err != nil {
+	if err := s.rpcCall(ctx, "eth_getBalance", []interface{}{address, "latest"}, &balanceHex); err != nil {
 		return nil, err
 	}
 
@@ -139,8 +136,8 @@ func (s *ethereumService) GetAddressBalance(ctx context.Context, networkCode, ad
 	}, nil
 }
 
-func (s *ethereumService) GetLatestBlock(ctx context.Context, networkCode string) (*models.LatestBlockResponse, error) {
-	block, err := s.getBlockByNumber(ctx, networkCode, "latest")
+func (s *ethereumService) GetLatestBlock(ctx context.Context) (*models.LatestBlockResponse, error) {
+	block, err := s.getBlockByNumber(ctx, "latest")
 	if err != nil {
 		return nil, err
 	}
@@ -150,43 +147,43 @@ func (s *ethereumService) GetLatestBlock(ctx context.Context, networkCode string
 	}, nil
 }
 
-func (s *ethereumService) GetTokenSupply(ctx context.Context, networkCode, tokenCode string) (*models.TokenSupplyResponse, error) {
-	contract, err := s.contracts.FindContract(networkCode, tokenCode)
+func (s *ethereumService) GetTokenSupply(ctx context.Context, tokenCode string) (*models.TokenSupplyResponse, error) {
+	token, err := s.tokens.FindToken(tokenCode)
 	if err != nil {
 		return nil, err
 	}
-	value, err := s.ethCall(ctx, networkCode, contract.Address, "0x18160ddd")
+	value, err := s.ethCall(ctx, token.TokenAddress, "0x18160ddd")
 	if err != nil {
 		return nil, err
 	}
 	return &models.TokenSupplyResponse{Value: models.RawNumber(hexToBigIntString(value))}, nil
 }
 
-func (s *ethereumService) GetTokenBalance(ctx context.Context, networkCode, tokenCode, address string) (*models.TokenBalanceResponse, error) {
-	contract, err := s.contracts.FindContract(networkCode, tokenCode)
+func (s *ethereumService) GetTokenBalance(ctx context.Context, tokenCode, address string) (*models.TokenBalanceResponse, error) {
+	token, err := s.tokens.FindToken(tokenCode)
 	if err != nil {
 		return nil, err
 	}
 
 	paddedAddress := leftPadHex(strings.TrimPrefix(strings.ToLower(address), "0x"), 64)
-	value, err := s.ethCall(ctx, networkCode, contract.Address, "0x70a08231"+paddedAddress)
+	value, err := s.ethCall(ctx, token.TokenAddress, "0x70a08231"+paddedAddress)
 	if err != nil {
 		return nil, err
 	}
 	return &models.TokenBalanceResponse{Value: models.RawNumber(hexToBigIntString(value))}, nil
 }
 
-func (s *ethereumService) getBlockByNumber(ctx context.Context, networkCode, blockNumber string) (*rpcBlock, error) {
+func (s *ethereumService) getBlockByNumber(ctx context.Context, blockNumber string) (*rpcBlock, error) {
 	var block rpcBlock
-	if err := s.rpcCall(ctx, networkCode, "eth_getBlockByNumber", []interface{}{blockNumber, false}, &block); err != nil {
+	if err := s.rpcCall(ctx, "eth_getBlockByNumber", []interface{}{blockNumber, false}, &block); err != nil {
 		return nil, err
 	}
 	return &block, nil
 }
 
-func (s *ethereumService) ethCall(ctx context.Context, networkCode, to, data string) (string, error) {
+func (s *ethereumService) ethCall(ctx context.Context, to, data string) (string, error) {
 	var result string
-	if err := s.rpcCall(ctx, networkCode, "eth_call", []interface{}{
+	if err := s.rpcCall(ctx, "eth_call", []interface{}{
 		map[string]interface{}{"to": to, "data": data},
 		"latest",
 	}, &result); err != nil {
@@ -197,10 +194,9 @@ func (s *ethereumService) ethCall(ctx context.Context, networkCode, to, data str
 
 var errRPCNullResult = errors.New("rpc returned null result")
 
-func (s *ethereumService) rpcCall(ctx context.Context, networkCode, method string, params []interface{}, out interface{}) error {
-	network, ok := s.networks[networkCode]
-	if !ok || network.RPCURL == "" {
-		return fmt.Errorf("network %s is not configured", networkCode)
+func (s *ethereumService) rpcCall(ctx context.Context, method string, params []interface{}, out interface{}) error {
+	if s.network.RPCURL == "" {
+		return fmt.Errorf("ethereum network is not configured")
 	}
 
 	body, err := json.Marshal(map[string]interface{}{
@@ -213,7 +209,7 @@ func (s *ethereumService) rpcCall(ctx context.Context, networkCode, method strin
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, network.RPCURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.network.RPCURL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -348,7 +344,7 @@ func leftPadHex(value string, width int) string {
 }
 
 func (s *ethereumService) decodeLogEvent(networkCode string, logEntry rpcLogRecord) (string, string, string) {
-	contract := s.findContractByAddress(networkCode, logEntry.Address)
+	contract := s.findContractByAddress(logEntry.Address)
 	if contract == nil || contract.InterfaceDefinition == "" || len(logEntry.Topics) == 0 {
 		return "", "", logEntry.Data
 	}
@@ -413,8 +409,8 @@ func (s *ethereumService) decodeLogEvent(networkCode string, logEntry rpcLogReco
 	return eventType, matched.Name, transformEventData(eventType, contract, string(raw))
 }
 
-func (s *ethereumService) findContractByAddress(networkCode, address string) *models.ContractInfo {
-	for _, contract := range s.contracts.ListContracts(networkCode) {
+func (s *ethereumService) findContractByAddress(address string) *models.ContractInfo {
+	for _, contract := range s.contracts.ListContracts() {
 		if strings.EqualFold(contract.Address, address) {
 			copyContract := contract
 			return &copyContract

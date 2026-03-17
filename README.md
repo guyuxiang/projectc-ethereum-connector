@@ -1,6 +1,6 @@
 # projectc-ethereum-connector
 
-`projectc-ethereum-connector` 是一个基于 Go 实现的以太坊连接服务，用于承接 `projectc-chain-connector-java` 中 EVM Connector 的核心能力，并以当前仓库的 Gin + Service + Store 框架组织方式提供 HTTP 接口、链上读写、合约配置管理、上链状态推进和订阅回调能力。
+`projectc-ethereum-connector` 是一个基于 Go 实现的以太坊连接服务，并以当前仓库的 Gin + Service + Store 框架组织方式提供 HTTP 接口、链上读写、合约配置管理、上链状态推进和订阅回调能力。
 
 当前版本已经不是初始化模板，而是一个可运行的业务服务。
 
@@ -10,7 +10,6 @@
 
 - 通用 EVM JSON-RPC 读写能力
 - 钱包原生转账
-- SC+ / Bridge 相关合约交易签名与提交
 - 合约配置推送、应用、查询
 - 交易订阅与地址订阅
 - 订阅回调、取消回调、确认复查
@@ -31,14 +30,6 @@
   - `token-balance`
 - 钱包能力
   - `wallet/faucet`
-- SC+ / Bridge 能力
-  - `dtt-send-settle`
-  - `auto-reject`
-  - `instant-on-ramp`
-  - `issue`
-  - `finance`
-  - `issueF`
-  - 对应 query 接口
 - 合约配置能力
   - 合约列表
   - 合约配置 push
@@ -81,7 +72,6 @@ projectc-ethereum-connector/
 │   ├── middleware/            # 鉴权中间件
 │   ├── models/                # DTO / 响应模型
 │   ├── mysql/                 # MySQL 初始化
-│   ├── rabbitmq/              # RabbitMQ 初始化与发布
 │   ├── route/                 # Gin 路由注册
 │   ├── service/               # 业务逻辑
 │   ├── store/                 # GORM 表模型与迁移
@@ -98,8 +88,6 @@ projectc-ethereum-connector/
   - 负责业务语义、链上交互、状态机推进、事件解码、订阅推进
 - `store`
   - 定义持久化表结构并负责迁移
-- `rabbitmq`
-  - 负责 MQ 连接与发布
 - `config`
   - 定义服务配置模型
 
@@ -123,11 +111,10 @@ projectc-ethereum-connector/
 
 1. 初始化 MySQL
 2. 自动迁移 connector 相关表
-3. 初始化 RabbitMQ
-4. 创建 Gin 路由
-5. 启动 HTTP 服务
+3. 创建 Gin 路由
+4. 启动 HTTP 服务
 
-MySQL 与 RabbitMQ 都支持“未配置则跳过”。
+MySQL 为必选依赖。
 
 ### 4.2 路由层
 
@@ -139,11 +126,15 @@ MySQL 与 RabbitMQ 都支持“未配置则跳过”。
 - `/inner/chain-data/:networkCode/common/*`
 - `/inner/chain-data-subscribe/:networkCode/*`
 - `/inner/chain-invoke/:networkCode/wallet/*`
-- `/inner/chain-invoke/:networkCode/scplus/*`
 - `/inner/contract/*`
 - `/open/*`
 
 除 `/ping`、`/version`、`/swagger` 以外，其余接口默认走 Basic Auth。
+
+当前版本内部只支持单一 EVM 网络，但为了保持接口兼容，HTTP 路径仍保留 `:networkCode`。
+
+- `:networkCode` 必须与配置中的 `ethereum.network.code` 完全一致
+- 如果不一致，服务会直接返回 `400`
 
 ### 4.3 EVM 通用能力
 
@@ -162,13 +153,11 @@ MySQL 与 RabbitMQ 都支持“未配置则跳过”。
 - `tx`
 - `txEvents`
 
-### 4.4 钱包与合约交易签名
+### 4.4 钱包交易签名
 
 相关文件：
 
 - [wallet.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/wallet.go)
-- [contract_tx.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/contract_tx.go)
-- [scplus.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/scplus.go)
 - [signer_nonce.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/signer_nonce.go)
 
 职责：
@@ -176,9 +165,6 @@ MySQL 与 RabbitMQ 都支持“未配置则跳过”。
 - EIP-1559 动态费交易构造
 - nonce 管理
 - 原生转账签名
-- 合约调用 ABI 编码
-- SC+ 业务参数组装
-- issue / finance / issueF 等复杂 tuple 结构编码
 
 `SignerNonceService` 会维护本地签名地址在不同网络上的 nonce，并支持重签时强制重置“下一次分配的 nonce”。
 
@@ -222,6 +208,8 @@ MySQL 与 RabbitMQ 都支持“未配置则跳过”。
 
 这使得合约地址的事件扫描可以在配置应用后自动开始。
 
+当前运行时读取的是数据库中的当前合约配置，而不是直接把 `ethereum.contracts` 当作在线配置源。对于新环境，如果数据库为空，需要先通过 `push -> apply` 写入并生效合约配置，之后 token 查询能力才可正常使用。
+
 ### 4.7 订阅系统
 
 [subscription.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/subscription.go)
@@ -261,21 +249,23 @@ MySQL 与 RabbitMQ 都支持“未配置则跳过”。
 - log address == target
 - ERC20 `Transfer` 中 `from` / `to` == target
 
-#### MQ 回调
+#### HTTP 回调
 
-当前支持两类对外消息：
+当前支持两类对外回调：
 
 - 普通回调
 - 取消回调
 
 配置项：
 
-- `rabbitmq.txCallbackExchange`
-- `rabbitmq.txCallbackExchangeType`
-- `rabbitmq.txCallbackCancelExchange`
-- `rabbitmq.txCallbackCancelExchangeType`
+- `callback.mode`
+- `callback.txHttpUrl`
+- `callback.rollbackHttpUrl`
 
-如果未配置，会回退到默认 `exchange + exchangeType + routingKey`。
+当前仅支持 `callback.mode=http`：
+
+- 普通交易回调会通过 `POST` 发送到 `callback.txHttpUrl`
+- 回滚回调会通过 `POST` 发送到 `callback.rollbackHttpUrl`
 
 ## 5. 数据表说明
 
@@ -308,7 +298,7 @@ MySQL 与 RabbitMQ 都支持“未配置则跳过”。
 
 ## 6. 主要业务流程
 
-### 6.1 钱包 / SC+ 写链流程
+### 6.1 钱包写链流程
 
 1. controller 接收请求
 2. service 组装交易参数
@@ -349,42 +339,41 @@ MySQL 与 RabbitMQ 都支持“未配置则跳过”。
 - `mysql.maxIdleConns`
 - `mysql.maxOpenConns`
 
-如果 `dsn` 为空，则 MySQL 初始化跳过，部分状态会退化为内存行为。
+`mysql.dsn` 为必填项。
 
-### 7.3 RabbitMQ
+### 7.3 Callback
 
-- `rabbitmq.url`
-- `rabbitmq.exchange`
-- `rabbitmq.exchangeType`
-- `rabbitmq.queue`
-- `rabbitmq.routingKey`
-- `rabbitmq.txCallbackExchange`
-- `rabbitmq.txCallbackExchangeType`
-- `rabbitmq.txCallbackCancelExchange`
-- `rabbitmq.txCallbackCancelExchangeType`
+- `callback.mode`
+- `callback.txHttpUrl`
+- `callback.rollbackHttpUrl`
 
-如果 `url` 为空，则 RabbitMQ 初始化跳过，回调发布会不可用。
+当前仅支持 HTTP 回调，`callback.mode` 应配置为 `http`，并分别提供：
+
+- `callback.txHttpUrl`
+- `callback.rollbackHttpUrl`
 
 ### 7.4 Ethereum
 
-- `ethereum.networks`
+- `ethereum.network`
   - `code`
   - `rpcUrl`
   - `chainId`
   - `blockchainExplorerUrl`
 - `ethereum.contracts`
   - `code`
-  - `networkCode`
   - `address`
   - `abi`
   - `deployBlockNumber`
 
+其中：
+
+- `ethereum.network` 是当前实例唯一使用的链配置
+- `ethereum.contracts` 当前更适合作为静态参考配置，运行时真正生效的是数据库中的当前合约配置
+
 ### 7.5 Connector
 
-- `connector.wallets`
+- `connector.wallet`
   - 钱包私钥配置
-- `connector.onchains`
-  - 不同 `networkCode + onchainType` 对应的签名人和目标合约配置
 
 ## 8. 运行方式
 
@@ -408,9 +397,18 @@ go run ./cmd
 
 - 一个可访问的 EVM 节点
 - MySQL
-- RabbitMQ
 
-如果只做接口调试，可在无 MySQL / 无 RabbitMQ 模式下启动，但订阅和持久化语义会退化。
+如果只做接口调试，也仍然需要提供 MySQL。
+
+### 8.3 部署方式
+
+当前服务推荐采用“一个 EVM 网络一个实例”的部署方式：
+
+1. 每个实例配置自己的 `ethereum.network`
+2. 每个实例对外仍使用带 `:networkCode` 的 HTTP 路径
+3. 路径中的 `:networkCode` 必须与该实例配置网络一致
+4. 每个实例使用各自独立的 MySQL
+5. 如需支持多个网络，启动多个实例分别部署
 
 ## 9. 当前设计特点
 
@@ -452,8 +450,6 @@ go run ./cmd
 - 控制器入口：[connector.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/controller/connector.go)
 - EVM 通用能力：[ethereum_rpc.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/ethereum_rpc.go)
 - 钱包签名：[wallet.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/wallet.go)
-- 合约签名：[contract_tx.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/contract_tx.go)
-- SC+ 业务：[scplus.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/scplus.go)
 - 上链状态机：[onchain_record.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/onchain_record.go)
 - 订阅系统：[subscription.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/subscription.go)
 - 合约配置管理：[contract_registry.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/contract_registry.go)

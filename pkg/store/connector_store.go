@@ -20,6 +20,7 @@ func AutoMigrate() error {
 		&AddressSubscriptionPO{},
 		&AddressSyncWaitingCheckPO{},
 		&TxCallbackRecordPO{},
+		&TokenRegistryPO{},
 	)
 }
 

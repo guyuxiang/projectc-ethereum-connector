@@ -1,6 +1,7 @@
 package route
 
 import (
+	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -8,6 +9,8 @@ import (
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/controller"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/log"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/middleware"
+	"github.com/guyuxiang/projectc-ethereum-connector/pkg/models"
+	"github.com/guyuxiang/projectc-ethereum-connector/pkg/service"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"github.com/swaggo/gin-swagger/swaggerFiles"
 )
@@ -48,35 +51,44 @@ func InstallRoutes(r *gin.Engine) {
 	connectorController := controller.NewConnectorController()
 	connectorController.StartBackgroundLoop()
 
-	secured.POST("/inner/chain-invoke/:networkCode/common/tx-send", connectorController.TxSend)
-	secured.POST("/inner/chain-data/:networkCode/common/tx-query", connectorController.TxQuery)
-	secured.POST("/inner/chain-data/:networkCode/common/address-balance", connectorController.AddressBalance)
-	secured.POST("/inner/chain-data/:networkCode/common/latest-block", connectorController.LatestBlock)
-	secured.POST("/inner/chain-data/:networkCode/common/token-supply", connectorController.TokenSupply)
-	secured.POST("/inner/chain-data/:networkCode/common/token-balance", connectorController.TokenBalance)
+	networkScoped := secured.Group("/")
+	networkScoped.Use(requireConfiguredNetworkCode())
 
-	secured.POST("/inner/chain-invoke/:networkCode/wallet/faucet", connectorController.Faucet)
+	networkScoped.POST("/inner/chain-invoke/:networkCode/common/tx-send", connectorController.TxSend)
+	networkScoped.POST("/inner/chain-data/:networkCode/common/tx-query", connectorController.TxQuery)
+	networkScoped.POST("/inner/chain-data/:networkCode/common/address-balance", connectorController.AddressBalance)
+	networkScoped.POST("/inner/chain-data/:networkCode/common/latest-block", connectorController.LatestBlock)
+	networkScoped.POST("/inner/chain-data/:networkCode/common/token-supply", connectorController.TokenSupply)
+	networkScoped.POST("/inner/chain-data/:networkCode/common/token-balance", connectorController.TokenBalance)
+	networkScoped.POST("/inner/chain-data/:networkCode/common/token-add", connectorController.TokenAdd)
+	networkScoped.POST("/inner/chain-data/:networkCode/common/token-delete", connectorController.TokenDelete)
+	networkScoped.POST("/inner/chain-data/:networkCode/common/token-get", connectorController.TokenGet)
+	networkScoped.POST("/inner/chain-data/:networkCode/common/token-list", connectorController.TokenList)
 
-	secured.POST("/inner/chain-data-subscribe/:networkCode/tx-subscribe", connectorController.TxSubscribe)
-	secured.POST("/inner/chain-data-subscribe/:networkCode/address-subscribe", connectorController.AddressSubscribe)
-	secured.POST("/inner/chain-data-subscribe/:networkCode/tx-subscribe-cancel", connectorController.TxSubscribeCancel)
-	secured.POST("/inner/chain-data-subscribe/:networkCode/address-subscribe-cancel", connectorController.AddressSubscribeCancel)
+	networkScoped.POST("/inner/chain-invoke/:networkCode/wallet/faucet", connectorController.Faucet)
 
-	secured.POST("/inner/contract/:networkCode/list", connectorController.ContractList)
+	networkScoped.POST("/inner/chain-data-subscribe/:networkCode/tx-subscribe", connectorController.TxSubscribe)
+	networkScoped.POST("/inner/chain-data-subscribe/:networkCode/address-subscribe", connectorController.AddressSubscribe)
+	networkScoped.POST("/inner/chain-data-subscribe/:networkCode/tx-subscribe-cancel", connectorController.TxSubscribeCancel)
+	networkScoped.POST("/inner/chain-data-subscribe/:networkCode/address-subscribe-cancel", connectorController.AddressSubscribeCancel)
+
+	networkScoped.POST("/inner/contract/:networkCode/list", connectorController.ContractList)
 	secured.POST("/inner/contract/contract-config-push-record/push", connectorController.ContractPush)
 
 	secured.POST("/open/all-clients/contract/web3-contract-info", connectorController.Web3ContractInfo)
 	secured.POST("/open/ops-client/contract/contract-config-push-record/apply", connectorController.ContractPushApply)
 	secured.POST("/open/ops-client/contract/contract-config-push-record/page", connectorController.ContractPushPage)
 
-	secured.POST("/inner/chain-invoke/:networkCode/scplus/dtt-send-settle", connectorController.DttSendSettle)
-	secured.POST("/inner/chain-invoke/:networkCode/scplus/auto-reject", connectorController.AutoReject)
-	secured.POST("/inner/chain-invoke/:networkCode/scplus/instant-on-ramp", connectorController.InstantOnRamp)
+}
 
-	secured.POST("/inner/chain-invoke/:networkCode/scplus/bridge/issue", connectorController.Issue)
-	secured.POST("/inner/chain-invoke/:networkCode/scplus/bridge/queryIssue", connectorController.QueryIssue)
-	secured.POST("/inner/chain-invoke/:networkCode/scplus/bridge/finance", connectorController.Finance)
-	secured.POST("/inner/chain-invoke/:networkCode/scplus/bridge/queryFinance", connectorController.QueryFinance)
-	secured.POST("/inner/chain-invoke/:networkCode/scplus/bridge/issueF", connectorController.IssueF)
-	secured.POST("/inner/chain-invoke/:networkCode/scplus/bridge/queryIssueF", connectorController.QueryIssueF)
+func requireConfiguredNetworkCode() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		configured := service.ConfiguredNetworkCode()
+		if configured == "" || c.Param("networkCode") == configured {
+			c.Next()
+			return
+		}
+		c.JSON(http.StatusBadRequest, models.Failure(400, "networkCode does not match configured network"))
+		c.Abort()
+	}
 }

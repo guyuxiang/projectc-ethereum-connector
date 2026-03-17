@@ -109,3 +109,12 @@ type TxCallbackRecordPO struct {
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
+
+type TokenRegistryPO struct {
+	ID           uint   `gorm:"primaryKey"`
+	Code         string `gorm:"size:191;uniqueIndex;not null"`
+	NetworkCode  string `gorm:"size:128;index;not null"`
+	TokenAddress string `gorm:"size:191;not null"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}

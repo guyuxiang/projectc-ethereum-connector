@@ -4,9 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/config"
@@ -16,212 +13,58 @@ import (
 )
 
 type ContractRegistryService interface {
-	ListContracts(networkCode string) []models.ContractInfo
+	ListContracts() []models.ContractInfo
 	ListWeb3Contracts() []models.Web3ContractInfo
 	Push(message models.ContractConfigPushMessage)
 	ApplyPush(pushRecordCode string) error
 	PagePushRecords(request models.PageRequest[models.ContractConfigPushRecordQuery]) models.PageResponse[models.ContractConfigPushRecordDTO]
-	FindContract(networkCode, contractCode string) (*models.ContractInfo, error)
-}
-
-type pushRecord struct {
-	models.ContractConfigPushMessage
-	applied bool
+	FindContract(contractCode string) (*models.ContractInfo, error)
 }
 
 type contractRegistryService struct {
-	mu          sync.RWMutex
-	current     map[string]models.ContractInfo
-	networks    map[string]config.NetworkConfig
-	pushRecords []pushRecord
+	networks map[string]config.NetworkConfig
 }
 
 func NewContractRegistryService() ContractRegistryService {
 	svc := &contractRegistryService{
-		current:  map[string]models.ContractInfo{},
 		networks: map[string]config.NetworkConfig{},
 	}
 
 	cfg := config.GetConfig()
 	if cfg.Ethereum != nil {
-		for _, network := range cfg.Ethereum.Networks {
-			svc.networks[network.Code] = network
-		}
-		for _, contract := range cfg.Ethereum.Contracts {
-			key := contract.NetworkCode + ":" + contract.Code
-			svc.current[key] = models.ContractInfo{
-				Code:                contract.Code,
-				NetworkCode:         contract.NetworkCode,
-				Address:             contract.Address,
-				InterfaceDefinition: contract.ABI,
-			}
-		}
+		svc.networks[cfg.Ethereum.Network.Code] = cfg.Ethereum.Network
 	}
 
 	return svc
 }
 
-func (s *contractRegistryService) ListContracts(networkCode string) []models.ContractInfo {
-	if mysql.DB() != nil {
-		return s.listContractsFromDB(networkCode)
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var result []models.ContractInfo
-	for _, contract := range s.current {
-		if networkCode == "" || contract.NetworkCode == networkCode {
-			result = append(result, contract)
-		}
-	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].NetworkCode == result[j].NetworkCode {
-			return result[i].Code < result[j].Code
-		}
-		return result[i].NetworkCode < result[j].NetworkCode
-	})
-	return result
+func (s *contractRegistryService) ListContracts() []models.ContractInfo {
+	return s.listContractsFromDB()
 }
 
 func (s *contractRegistryService) ListWeb3Contracts() []models.Web3ContractInfo {
-	if mysql.DB() != nil {
-		return s.listWeb3ContractsFromDB()
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var result []models.Web3ContractInfo
-	for _, contract := range s.current {
-		network := s.networks[contract.NetworkCode]
-		result = append(result, models.Web3ContractInfo{
-			Contract: models.Web3Contract{
-				Code:        contract.Code,
-				NetworkCode: contract.NetworkCode,
-				Address:     contract.Address,
-				ABI:         contract.InterfaceDefinition,
-			},
-			Network: models.Web3Network{
-				Code:                  network.Code,
-				NodeAddress:           network.RPCURL,
-				ChainID:               network.ChainID,
-				BlockchainExplorerURL: network.BlockchainExplorerURL,
-			},
-		})
-	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].Contract.NetworkCode == result[j].Contract.NetworkCode {
-			return result[i].Contract.Code < result[j].Contract.Code
-		}
-		return result[i].Contract.NetworkCode < result[j].Contract.NetworkCode
-	})
-	return result
+	return s.listWeb3ContractsFromDB()
 }
 
 func (s *contractRegistryService) Push(message models.ContractConfigPushMessage) {
-	if mysql.DB() != nil {
-		s.pushToDB(message)
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.pushRecords = append(s.pushRecords, pushRecord{ContractConfigPushMessage: message})
+	s.pushToDB(message)
 }
 
 func (s *contractRegistryService) ApplyPush(pushRecordCode string) error {
-	if mysql.DB() != nil {
-		return s.applyPushToDB(pushRecordCode)
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for idx := range s.pushRecords {
-		if s.pushRecords[idx].PushID != pushRecordCode {
-			continue
-		}
-		for _, item := range s.pushRecords[idx].PushItems {
-			s.current[item.NetworkCode+":"+item.ContractCode] = models.ContractInfo{
-				Code:                item.ContractCode,
-				NetworkCode:         item.NetworkCode,
-				Address:             item.ContractAddress,
-				InterfaceDefinition: item.ContractABI,
-			}
-		}
-		s.pushRecords[idx].applied = true
-		return nil
-	}
-	return errors.New("push record not found")
+	return s.applyPushToDB(pushRecordCode)
 }
 
 func (s *contractRegistryService) PagePushRecords(request models.PageRequest[models.ContractConfigPushRecordQuery]) models.PageResponse[models.ContractConfigPushRecordDTO] {
-	if mysql.DB() != nil {
-		return s.pagePushRecordsFromDB(request)
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	filtered := make([]models.ContractConfigPushRecordDTO, 0, len(s.pushRecords))
-	codeContains := strings.ToLower(request.Filter.CodeContains)
-	descContains := strings.ToLower(request.Filter.DescriptionContains)
-	for _, record := range s.pushRecords {
-		if codeContains != "" && !strings.Contains(strings.ToLower(record.PushID), codeContains) {
-			continue
-		}
-		if descContains != "" && !strings.Contains(strings.ToLower(record.Description), descContains) {
-			continue
-		}
-		filtered = append(filtered, models.ContractConfigPushRecordDTO{
-			Code:        record.PushID,
-			Description: record.Description,
-		})
-	}
-
-	pageNo := request.PageNo
-	if pageNo <= 0 {
-		pageNo = 1
-	}
-	pageSize := request.PageSize
-	if pageSize <= 0 {
-		pageSize = 10
-	}
-
-	start := (pageNo - 1) * pageSize
-	if start > len(filtered) {
-		start = len(filtered)
-	}
-	end := start + pageSize
-	if end > len(filtered) {
-		end = len(filtered)
-	}
-
-	return models.PageResponse[models.ContractConfigPushRecordDTO]{
-		PageNo:     pageNo,
-		PageSize:   pageSize,
-		TotalCount: len(filtered),
-		Records:    filtered[start:end],
-	}
+	return s.pagePushRecordsFromDB(request)
 }
 
-func (s *contractRegistryService) FindContract(networkCode, contractCode string) (*models.ContractInfo, error) {
-	if mysql.DB() != nil {
-		return s.findContractFromDB(networkCode, contractCode)
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	contract, ok := s.current[networkCode+":"+contractCode]
-	if !ok {
-		return nil, errors.New("contract not found")
-	}
-	copy := contract
-	return &copy, nil
+func (s *contractRegistryService) FindContract(contractCode string) (*models.ContractInfo, error) {
+	return s.findContractFromDB(contractCode)
 }
 
-func (s *contractRegistryService) listContractsFromDB(networkCode string) []models.ContractInfo {
+func (s *contractRegistryService) listContractsFromDB() []models.ContractInfo {
 	var records []store.CurrentContractConfigPO
-	query := mysql.DB().Order("network_code asc, contract_code asc")
-	if networkCode != "" {
-		query = query.Where("network_code = ?", networkCode)
-	}
+	query := mysql.DB().Where("network_code = ?", configuredNetworkCode()).Order("network_code asc, contract_code asc")
 	if err := query.Find(&records).Error; err != nil {
 		return nil
 	}
@@ -238,7 +81,7 @@ func (s *contractRegistryService) listContractsFromDB(networkCode string) []mode
 }
 
 func (s *contractRegistryService) listWeb3ContractsFromDB() []models.Web3ContractInfo {
-	contracts := s.listContractsFromDB("")
+	contracts := s.listContractsFromDB()
 	result := make([]models.Web3ContractInfo, 0, len(contracts))
 	for _, contract := range contracts {
 		network := s.networks[contract.NetworkCode]
@@ -282,6 +125,7 @@ func (s *contractRegistryService) applyPushToDB(pushRecordCode string) error {
 	}
 
 	for _, item := range items {
+		item.NetworkCode = configuredNetworkCode()
 		code := item.ContractCode + "_" + item.NetworkCode
 		var current store.CurrentContractConfigPO
 		err := mysql.DB().Where("code = ?", code).First(&current).Error
@@ -325,7 +169,7 @@ func (s *contractRegistryService) applyPushToDB(pushRecordCode string) error {
 }
 
 func registerContractAddressSubscription(networkCode, address string, startBlock uint64) {
-	if mysql.DB() == nil || address == "" {
+	if address == "" {
 		return
 	}
 	code := fmt.Sprintf("%s_%s", networkCode, address)
@@ -386,9 +230,9 @@ func (s *contractRegistryService) pagePushRecordsFromDB(request models.PageReque
 	}
 }
 
-func (s *contractRegistryService) findContractFromDB(networkCode, contractCode string) (*models.ContractInfo, error) {
+func (s *contractRegistryService) findContractFromDB(contractCode string) (*models.ContractInfo, error) {
 	var row store.CurrentContractConfigPO
-	if err := mysql.DB().Where("network_code = ? and contract_code = ?", networkCode, contractCode).First(&row).Error; err != nil {
+	if err := mysql.DB().Where("network_code = ? and contract_code = ?", configuredNetworkCode(), contractCode).First(&row).Error; err != nil {
 		return nil, errors.New("contract not found")
 	}
 	return &models.ContractInfo{
