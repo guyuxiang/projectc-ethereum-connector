@@ -143,7 +143,7 @@ MySQL 为必选依赖。
 负责：
 
 - 直接调用节点 JSON-RPC
-- 查询交易、区块、余额、代币余额、总量
+- 查询交易、区块、余额、代币余额、总量、合约日志
 - 对 receipt logs 进行 ABI 解码
 - 将原始事件映射为 Java 风格 `ChainEventType`
 - 将事件 data 转成 ProjectC 使用的业务 JSON 结构
@@ -210,6 +210,18 @@ MySQL 为必选依赖。
 
 当前运行时读取的是数据库中的当前合约配置。对于新环境，如果数据库为空，需要先通过 `push -> apply` 写入并生效合约配置，之后 token 查询能力才可正常使用。
 
+### 4.6.1 Token Registry
+
+[token_registry.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/token_registry.go)
+
+当前独立维护一张数据库 token registry，用于：
+
+- `token-add / token-get / token-list / token-delete`
+- `token-balance / token-supply` 按 `tokenCode` 查 token 地址
+- 事件解析阶段按合约地址反查 `tokenCode`
+
+也就是说，回调里的 token 相关事件不再直接使用 `contract.Code` 作为 `tokenCode`，而是优先从 token 表按 `tokenAddress` 查询。
+
 ### 4.7 订阅系统
 
 [subscription.go](/usr/src/golang/workspace/projectc-ethereum-connector/pkg/service/subscription.go)
@@ -233,21 +245,25 @@ MySQL 为必选依赖。
 
 #### `address-subscribe`
 
+当前 `address-subscribe` 已经重构为“合约地址日志订阅”，语义不再是钱包地址全量活动扫描。
+
 流程：
 
 1. 记录 `AddressSubscriptionPO`
-2. 后台按块区间扫描
-3. 命中地址相关交易后生成 `tx-subscribe`
-4. 同时记录 `AddressSyncWaitingCheckPO`
-5. 确认块数后重新扫描同一区间
-6. 如果确认期内出现新的地址相关交易，再补成 `tx-subscribe`
+2. 后台按区块范围分段调用 `eth_getLogs`
+3. `address` 作为合约地址过滤条件传给节点
+4. 对返回的每条日志执行 `decodeLogEvent`
+5. 只有能匹配当前数据库合约 ABI 的日志才继续处理
+6. 从日志里取 `transactionHash`，自动下沉成 `tx-subscribe`
+7. 同时记录 `AddressSyncWaitingCheckPO`
+8. 确认块数后重新对同一区间跑 `eth_getLogs`
+9. 如果确认期内出现新的日志交易，再补成 `tx-subscribe`
 
-当前地址命中规则包括：
+这意味着：
 
-- `from == target`
-- `to == target`
-- log address == target
-- ERC20 `Transfer` 中 `from` / `to` == target
+- 现在适合监听 USDC / USDT 等合约地址的事件日志
+- 不再适合用来监听钱包地址的原生代币转账
+- 如果要监听原生代币转账，需要单独增加另一条订阅路径
 
 #### HTTP 回调
 
@@ -281,6 +297,7 @@ MySQL 为必选依赖。
 - `AddressSubscriptionPO`
 - `AddressSyncWaitingCheckPO`
 - `TxCallbackRecordPO`
+- `TokenRegistryPO`
 
 ### 5.1 关键表职责
 
@@ -292,9 +309,12 @@ MySQL 为必选依赖。
 - `TxCallbackRecordPO`
   - 记录回调 payload、回调状态、确认检查状态、重试信息
 - `AddressSubscriptionPO`
-  - 记录地址扫描订阅
+  - 记录基于合约地址的日志订阅
 - `AddressSyncWaitingCheckPO`
-  - 记录地址扫描区间的确认复查任务
+  - 记录日志扫描区间的确认复查任务
+- `TokenRegistryPO`
+  - 记录 `tokenCode -> tokenAddress -> decimals`
+  - 供余额/总量查询以及事件解析反查 `tokenCode`
 
 ## 6. 主要业务流程
 
@@ -316,7 +336,7 @@ MySQL 为必选依赖。
 2. apply push record
 3. 更新 current contract config
 4. 自动登记合约地址 `address-subscribe`
-5. 后续地址扫描命中交易
+5. 后续 `eth_getLogs` 命中日志对应的交易
 6. 下沉为 `tx-subscribe`
 7. 回调 tx 与 txEvents
 
