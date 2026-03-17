@@ -1,0 +1,727 @@
+basePath: /api/v1
+definitions:
+  models.AddressBalanceRequest:
+    properties:
+      address:
+        type: string
+    type: object
+  models.AddressSubscribeCancelRequest:
+    properties:
+      address:
+        type: string
+      endBlockNumber:
+        type: integer
+    type: object
+  models.AddressSubscribeRange:
+    properties:
+      endBlockNumber:
+        type: integer
+      startBlockNumber:
+        type: integer
+    type: object
+  models.AddressSubscribeRequest:
+    properties:
+      address:
+        type: string
+      subscribeRange:
+        $ref: '#/definitions/models.AddressSubscribeRange'
+    type: object
+  models.ApplyContractConfigPushRecordRequest:
+    properties:
+      pushRecordCode:
+        type: string
+    type: object
+  models.BalanceChargeRequest:
+    type: object
+  models.ContractConfigPushItem:
+    properties:
+      contractAbi:
+        type: string
+      contractAddress:
+        type: string
+      contractCode:
+        type: string
+      contractDeployTxBlockNumber:
+        type: integer
+      networkCode:
+        type: string
+    type: object
+  models.ContractConfigPushMessage:
+    properties:
+      description:
+        type: string
+      pushId:
+        type: string
+      pushItems:
+        items:
+          $ref: '#/definitions/models.ContractConfigPushItem'
+        type: array
+    type: object
+  models.ErrorResponse:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+    type: object
+  models.Response:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+    type: object
+  models.TokenAddRequest:
+    properties:
+      tokenAddress:
+        type: string
+      tokenCode:
+        type: string
+    type: object
+  models.TokenBalanceRequest:
+    properties:
+      address:
+        type: string
+      tokenCode:
+        type: string
+    type: object
+  models.TokenDeleteRequest:
+    properties:
+      tokenCode:
+        type: string
+    type: object
+  models.TokenGetRequest:
+    properties:
+      tokenCode:
+        type: string
+    type: object
+  models.TokenListRequest:
+    type: object
+  models.TokenSupplyRequest:
+    properties:
+      tokenCode:
+        type: string
+    type: object
+  models.TxQueryRequest:
+    properties:
+      txCode:
+        type: string
+    type: object
+  models.TxSendRequest:
+    properties:
+      txSignResult:
+        type: string
+    type: object
+  models.TxSubscribeCancelRequest:
+    properties:
+      txCode:
+        type: string
+    type: object
+  models.TxSubscribeRange:
+    properties:
+      endTimestamp:
+        type: integer
+    type: object
+  models.TxSubscribeRequest:
+    properties:
+      subscribeRange:
+        $ref: '#/definitions/models.TxSubscribeRange'
+      txCode:
+        type: string
+    type: object
+info:
+  contact:
+    email: guyuxiang@qq.com
+    name: guyuxiang
+    url: https://guyuxiang.github.io
+  description: This is a projectc-ethereum-connector.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: Swagger projectc-ethereum-connector
+  version: 0.1.0
+paths:
+  /inner/chain-data-subscribe/{networkCode}/address-subscribe:
+    post:
+      consumes:
+      - application/json
+      description: Register an address scan subscription for callback processing
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Address subscription payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.AddressSubscribeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Subscribe address
+      tags:
+      - Subscription
+  /inner/chain-data-subscribe/{networkCode}/address-subscribe-cancel:
+    post:
+      consumes:
+      - application/json
+      description: Update or stop an address scan subscription
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Address subscription cancel payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.AddressSubscribeCancelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Cancel address subscription
+      tags:
+      - Subscription
+  /inner/chain-data-subscribe/{networkCode}/tx-subscribe:
+    post:
+      consumes:
+      - application/json
+      description: Register a transaction subscription for callback processing
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Transaction subscription payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.TxSubscribeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Subscribe transaction
+      tags:
+      - Subscription
+  /inner/chain-data-subscribe/{networkCode}/tx-subscribe-cancel:
+    post:
+      consumes:
+      - application/json
+      description: Cancel a registered transaction subscription
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Transaction subscription cancel payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.TxSubscribeCancelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Cancel transaction subscription
+      tags:
+      - Subscription
+  /inner/chain-data/{networkCode}/common/address-balance:
+    post:
+      consumes:
+      - application/json
+      description: Query native token balance of an address on the configured network
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Address balance query payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.AddressBalanceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Query address balance
+      tags:
+      - Common
+  /inner/chain-data/{networkCode}/common/latest-block:
+    post:
+      description: Query latest block number and timestamp from the configured network
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Query latest block
+      tags:
+      - Common
+  /inner/chain-data/{networkCode}/common/token-add:
+    post:
+      consumes:
+      - application/json
+      description: Add a token definition into database-backed EVM token registry.
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Token add request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.TokenAddRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Add or update token
+      tags:
+      - Common
+  /inner/chain-data/{networkCode}/common/token-balance:
+    post:
+      consumes:
+      - application/json
+      description: Query token balance of an address for a token configured in the
+        database-backed EVM token registry
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Token balance query payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.TokenBalanceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Query token balance
+      tags:
+      - Common
+  /inner/chain-data/{networkCode}/common/token-delete:
+    post:
+      consumes:
+      - application/json
+      description: Delete a token definition from database-backed EVM token registry
+        by token code.
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Token delete request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.TokenDeleteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Delete token
+      tags:
+      - Common
+  /inner/chain-data/{networkCode}/common/token-get:
+    post:
+      consumes:
+      - application/json
+      description: Get a token definition from database-backed EVM token registry
+        by token code.
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Token get request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.TokenGetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Get token
+      tags:
+      - Common
+  /inner/chain-data/{networkCode}/common/token-list:
+    post:
+      consumes:
+      - application/json
+      description: List token definitions from database-backed EVM token registry.
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Token list request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.TokenListRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: List tokens
+      tags:
+      - Common
+  /inner/chain-data/{networkCode}/common/token-supply:
+    post:
+      consumes:
+      - application/json
+      description: Query total supply of a token configured in the database-backed
+        EVM token registry
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Token supply query payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.TokenSupplyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Query token supply
+      tags:
+      - Common
+  /inner/chain-data/{networkCode}/common/tx-query:
+    post:
+      consumes:
+      - application/json
+      description: Query transaction status and decoded events by transaction hash
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Transaction query payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.TxQueryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Query transaction
+      tags:
+      - Common
+  /inner/chain-invoke/{networkCode}/common/tx-send:
+    post:
+      consumes:
+      - application/json
+      description: Submit a signed raw EVM transaction to the configured network
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Signed transaction payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.TxSendRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Send raw transaction
+      tags:
+      - Common
+  /inner/chain-invoke/{networkCode}/wallet/faucet:
+    post:
+      consumes:
+      - application/json
+      description: Create and submit a native token transfer from the configured wallet
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      - description: Wallet transfer payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.BalanceChargeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Send native token
+      tags:
+      - Wallet
+  /inner/contract/{networkCode}/list:
+    post:
+      description: Query currently applied contract configurations for the configured
+        network
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: List current contracts
+      tags:
+      - Contract
+  /inner/contract/contract-config-push-record/push:
+    post:
+      consumes:
+      - application/json
+      description: Create a contract configuration push record
+      parameters:
+      - description: Contract config push payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.ContractConfigPushMessage'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Push contract config
+      tags:
+      - Contract
+  /open/all-clients/contract/web3-contract-info:
+    post:
+      description: Query current contract and network info for web3 clients
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: List web3 contract info
+      tags:
+      - Contract
+  /open/ops-client/contract/contract-config-push-record/apply:
+    post:
+      consumes:
+      - application/json
+      description: Apply a pushed contract configuration record into current contract
+        config
+      parameters:
+      - description: Apply contract push payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.ApplyContractConfigPushRecordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Apply contract config push
+      tags:
+      - Contract
+  /open/ops-client/contract/contract-config-push-record/page:
+    post:
+      consumes:
+      - application/json
+      description: Query paged contract configuration push records
+      parameters:
+      - description: Contract push page query payload
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Page contract config push records
+      tags:
+      - Contract
+swagger: "2.0"
