@@ -1,14 +1,14 @@
 package config
 
 type Config struct {
-	Server    *Server    `yaml:"server"`
-	Auth      *Auth      `yaml:"auth"`
-	Gin       *Gin       `yaml:"gin"`
-	Log       *Log       `yaml:"log"`
-	MySQL     *MySQL     `yaml:"mysql"`
-	Callback  *Callback  `yaml:"callback"`
-	Ethereum  *Ethereum  `yaml:"ethereum"`
-	Connector *Connector `yaml:"connector"`
+	Server   *Server        `yaml:"server"`
+	Auth     *Auth          `yaml:"auth"`
+	Gin      *Gin           `yaml:"gin"`
+	Log      *Log           `yaml:"log"`
+	MySQL    *MySQL         `yaml:"mysql"`
+	Callback *Callback      `yaml:"callback"`
+	Network  *NetworkConfig `yaml:"network"`
+	Wallet   *WalletSigner  `yaml:"wallet"`
 }
 
 type Server struct {
@@ -42,24 +42,17 @@ type MySQL struct {
 }
 
 type Callback struct {
-	Mode            string `yaml:"mode"`
+	Username        string `yaml:"username"`
+	Password        string `yaml:"password"`
 	TxHTTPURL       string `yaml:"txHttpUrl"`
 	RollbackHTTPURL string `yaml:"rollbackHttpUrl"`
 }
 
-type Ethereum struct {
-	Network NetworkConfig `yaml:"network"`
-}
-
 type NetworkConfig struct {
-	Code       string `yaml:"code"`
+	Code       string `yaml:"networkCode"`
 	RPCURL     string `yaml:"rpcUrl"`
 	BundlerURL string `yaml:"bundlerUrl"`
 	ChainID    int64  `yaml:"chainId"`
-}
-
-type Connector struct {
-	Wallet WalletSigner `yaml:"wallet"`
 }
 
 type WalletSigner struct {

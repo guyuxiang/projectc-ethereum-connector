@@ -8,16 +8,16 @@ import (
 
 func configuredNetwork() (config.NetworkConfig, error) {
 	cfg := config.GetConfig()
-	if cfg.Ethereum == nil {
-		return config.NetworkConfig{}, errors.New("ethereum config not found")
+	if cfg.Network == nil {
+		return config.NetworkConfig{}, errors.New("network config not found")
 	}
-	if cfg.Ethereum.Network.RPCURL == "" {
-		return config.NetworkConfig{}, errors.New("ethereum network rpcUrl is required")
+	if cfg.Network.RPCURL == "" {
+		return config.NetworkConfig{}, errors.New("network rpcUrl is required")
 	}
-	if cfg.Ethereum.Network.Code == "" {
-		return config.NetworkConfig{}, errors.New("ethereum network code is required")
+	if cfg.Network.Code == "" {
+		return config.NetworkConfig{}, errors.New("network code is required")
 	}
-	return cfg.Ethereum.Network, nil
+	return *cfg.Network, nil
 }
 
 func configuredNetworkCode() string {

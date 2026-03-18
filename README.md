@@ -133,7 +133,7 @@ MySQL 为必选依赖。
 
 当前版本内部只支持单一 EVM 网络，但为了保持接口兼容，HTTP 路径仍保留 `:networkCode`。
 
-- `:networkCode` 必须与配置中的 `ethereum.network.code` 完全一致
+- `:networkCode` 必须与配置中的 `network.networkCode` 完全一致
 - 如果不一致，服务会直接返回 `400`
 
 ### 4.3 EVM 通用能力
@@ -274,12 +274,12 @@ MySQL 为必选依赖。
 
 配置项：
 
-- `callback.mode`
+- `callback.username`
+- `callback.password`
 - `callback.txHttpUrl`
 - `callback.rollbackHttpUrl`
 
-当前仅支持 `callback.mode=http`：
-
+- 回调请求会按 Basic Auth 发送 `callback.username / callback.password`
 - 普通交易回调会通过 `POST` 发送到 `callback.txHttpUrl`
 - 回滚回调会通过 `POST` 发送到 `callback.rollbackHttpUrl`
 
@@ -368,29 +368,32 @@ MySQL 为必选依赖。
 
 ### 7.3 Callback
 
-- `callback.mode`
+- `callback.username`
+- `callback.password`
 - `callback.txHttpUrl`
 - `callback.rollbackHttpUrl`
 
-当前仅支持 HTTP 回调，`callback.mode` 应配置为 `http`，并分别提供：
+当前仅支持 HTTP 回调，并分别提供：
 
+- `callback.username`
+- `callback.password`
 - `callback.txHttpUrl`
 - `callback.rollbackHttpUrl`
 
-### 7.4 Ethereum
+### 7.4 Network
 
-- `ethereum.network`
-  - `code`
+- `network`
+  - `networkCode`
   - `rpcUrl`
   - `chainId`
 
 其中：
 
-- `ethereum.network` 是当前实例唯一使用的链配置
+- `network` 是当前实例唯一使用的链配置
 
-### 7.5 Connector
+### 7.5 Wallet
 
-- `connector.wallet`
+- `wallet`
   - 钱包私钥配置
 
 ## 8. 运行方式
@@ -422,7 +425,7 @@ go run ./cmd
 
 当前服务推荐采用“一个 EVM 网络一个实例”的部署方式：
 
-1. 每个实例配置自己的 `ethereum.network`
+1. 每个实例配置自己的 `network`
 2. 每个实例对外仍使用带 `:networkCode` 的 HTTP 路径
 3. 路径中的 `:networkCode` 必须与该实例配置网络一致
 4. 每个实例使用各自独立的 MySQL

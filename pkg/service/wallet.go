@@ -137,17 +137,17 @@ func (s *walletService) createNativeChargePrepared(ctx context.Context, req mode
 
 func findWalletConfig() (config.WalletSigner, config.NetworkConfig, error) {
 	cfg := config.GetConfig()
-	if cfg.Connector == nil {
+	if cfg.Wallet == nil {
 		return config.WalletSigner{}, config.NetworkConfig{}, errors.New("wallet config not found")
 	}
 	network, err := configuredNetwork()
 	if err != nil {
 		return config.WalletSigner{}, config.NetworkConfig{}, err
 	}
-	if cfg.Connector.Wallet.PrivateKey == "" {
+	if cfg.Wallet.PrivateKey == "" {
 		return config.WalletSigner{}, config.NetworkConfig{}, errors.New("wallet config not found")
 	}
-	return cfg.Connector.Wallet, network, nil
+	return *cfg.Wallet, network, nil
 }
 
 func mustJSON(v interface{}) string {

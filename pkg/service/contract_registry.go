@@ -31,8 +31,8 @@ func NewContractRegistryService() ContractRegistryService {
 	}
 
 	cfg := config.GetConfig()
-	if cfg.Ethereum != nil {
-		svc.networks[cfg.Ethereum.Network.Code] = cfg.Ethereum.Network
+	if cfg.Network != nil {
+		svc.networks[cfg.Network.Code] = *cfg.Network
 	}
 
 	return svc

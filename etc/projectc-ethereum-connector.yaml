@@ -19,16 +19,15 @@ mysql:
   maxIdleConns: 200
   connMaxLifeSec: 300
 callback:
-  mode: "http"
+  username: "test"
+  password: "test"
   txHttpUrl: "http://unblock-custodial-wallet/api/v1/inner/wallet/callback/tx"
   rollbackHttpUrl: "http://unblock-custodial-wallet/api/v1/inner/wallet/callback/rollback"
-connector:
-  wallet:
-    fromAddress: "0xYourWalletAddress"
-    privateKey: "0xYourPrivateKey"
-ethereum:
-  network:
-    code: "sepolia"
-    rpcUrl: "https://sepolia.gateway.tenderly.co/2xRV8vQTDZE3KmbMjo4jCm"
-    bundlerUrl: "https://your-skandha-bundler"
-    chainId: 11155111
+wallet:
+  fromAddress: "0x6d00479f9bd0A2Ae1801b9AD208204578B4978cD"
+  privateKey: "8e948e8f61e7468921b55e2581b6964174bb54f73492768f08d9c3e84f84518d"
+network:
+  networkCode: "sepolia"
+  rpcUrl: "https://sepolia.gateway.tenderly.co/2xRV8vQTDZE3KmbMjo4jCm"
+  bundlerUrl: "https://your-skandha-bundler"
+  chainId: 11155111

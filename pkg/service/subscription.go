@@ -434,8 +434,8 @@ const (
 
 func publishHTTPCallback(body []byte, kind string) error {
 	cfg := config.GetConfig()
-	if cfg.Callback == nil || !strings.EqualFold(cfg.Callback.Mode, "http") {
-		return fmt.Errorf("http callback mode is not enabled")
+	if cfg.Callback == nil {
+		return fmt.Errorf("callback config is required")
 	}
 
 	targetURL := strings.TrimSpace(cfg.Callback.TxHTTPURL)
@@ -444,9 +444,9 @@ func publishHTTPCallback(body []byte, kind string) error {
 	}
 	if targetURL == "" {
 		if kind == callbackKindRollback {
-			return fmt.Errorf("callback.rollbackHttpUrl is required when callback.mode=http")
+			return fmt.Errorf("callback.rollbackHttpUrl is required")
 		}
-		return fmt.Errorf("callback.txHttpUrl is required when callback.mode=http")
+		return fmt.Errorf("callback.txHttpUrl is required")
 	}
 
 	client := &http.Client{Timeout: 15 * time.Second}
@@ -455,6 +455,9 @@ func publishHTTPCallback(body []byte, kind string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if cfg.Callback.Username != "" || cfg.Callback.Password != "" {
+		req.SetBasicAuth(cfg.Callback.Username, cfg.Callback.Password)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
