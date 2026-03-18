@@ -212,6 +212,6 @@ type ChainTx struct {
 }
 
 type ChainEvent struct {
-	Type string `json:"type"`
-	Data string `json:"data"`
+	Type string      `json:"type"`
+	Data interface{} `json:"data"`
 }

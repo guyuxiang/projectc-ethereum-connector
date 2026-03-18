@@ -179,7 +179,7 @@ func (s *ethereumService) queryNativeTransaction(ctx context.Context, txHash str
 		eventType, _, eventData := s.decodeLogEvent(networkCode, logEntry)
 		result.TxEvents = append(result.TxEvents, models.ChainEvent{
 			Type: eventType,
-			Data: eventData,
+			Data: decodeEventDataValue(eventData),
 		})
 	}
 
@@ -240,7 +240,7 @@ func (s *ethereumService) queryUserOperation(ctx context.Context, userOpHash str
 		eventType, _, eventData := s.decodeLogEvent(s.network.Networkcode, logEntry)
 		result.TxEvents = append(result.TxEvents, models.ChainEvent{
 			Type: eventType,
-			Data: eventData,
+			Data: decodeEventDataValue(eventData),
 		})
 	}
 
@@ -553,6 +553,18 @@ func leftPadHex(value string, width int) string {
 		return value[len(value)-width:]
 	}
 	return strings.Repeat("0", width-len(value)) + value
+}
+
+func decodeEventDataValue(raw string) interface{} {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	var out interface{}
+	if err := json.Unmarshal([]byte(trimmed), &out); err == nil {
+		return out
+	}
+	return raw
 }
 
 func (s *ethereumService) decodeLogEvent(networkCode string, logEntry rpcLogRecord) (string, string, string) {
