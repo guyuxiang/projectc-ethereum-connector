@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/config"
@@ -19,27 +21,39 @@ type ContractRegistryService interface {
 	ApplyPush(pushRecordCode string) error
 	PagePushRecords(request models.PageRequest[models.ContractConfigPushRecordQuery]) models.PageResponse[models.ContractConfigPushRecordDTO]
 	FindContract(contractCode string) (*models.ContractInfo, error)
+	FindContractByAddress(address string) (*models.ContractInfo, error)
 }
 
 type contractRegistryService struct {
-	networks map[string]config.NetworkConfig
+	networks        map[string]config.NetworkConfig
+	mu              sync.RWMutex
+	contracts       []models.ContractInfo
+	contractsByCode map[string]models.ContractInfo
+	contractsByAddr map[string]models.ContractInfo
 }
 
 func NewContractRegistryService() ContractRegistryService {
 	svc := &contractRegistryService{
-		networks: map[string]config.NetworkConfig{},
+		networks:        map[string]config.NetworkConfig{},
+		contractsByCode: map[string]models.ContractInfo{},
+		contractsByAddr: map[string]models.ContractInfo{},
 	}
 
 	cfg := config.GetConfig()
 	if cfg.Network != nil {
 		svc.networks[cfg.Network.Networkcode] = *cfg.Network
 	}
+	svc.reloadContractsCache()
 
 	return svc
 }
 
 func (s *contractRegistryService) ListContracts() []models.ContractInfo {
-	return s.listContractsFromDB()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]models.ContractInfo, len(s.contracts))
+	copy(result, s.contracts)
+	return result
 }
 
 func (s *contractRegistryService) ListWeb3Contracts() []models.Web3ContractInfo {
@@ -59,7 +73,25 @@ func (s *contractRegistryService) PagePushRecords(request models.PageRequest[mod
 }
 
 func (s *contractRegistryService) FindContract(contractCode string) (*models.ContractInfo, error) {
-	return s.findContractFromDB(contractCode)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	contract, ok := s.contractsByCode[strings.ToLower(strings.TrimSpace(contractCode))]
+	if !ok {
+		return nil, errors.New("contract not found")
+	}
+	copyContract := contract
+	return &copyContract, nil
+}
+
+func (s *contractRegistryService) FindContractByAddress(address string) (*models.ContractInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	contract, ok := s.contractsByAddr[strings.ToLower(strings.TrimSpace(address))]
+	if !ok {
+		return nil, errors.New("contract not found")
+	}
+	copyContract := contract
+	return &copyContract, nil
 }
 
 func (s *contractRegistryService) listContractsFromDB() []models.ContractInfo {
@@ -78,6 +110,21 @@ func (s *contractRegistryService) listContractsFromDB() []models.ContractInfo {
 		})
 	}
 	return result
+}
+
+func (s *contractRegistryService) reloadContractsCache() {
+	contracts := s.listContractsFromDB()
+	byCode := make(map[string]models.ContractInfo, len(contracts))
+	byAddr := make(map[string]models.ContractInfo, len(contracts))
+	for _, contract := range contracts {
+		byCode[strings.ToLower(contract.Code)] = contract
+		byAddr[strings.ToLower(contract.Address)] = contract
+	}
+	s.mu.Lock()
+	s.contracts = contracts
+	s.contractsByCode = byCode
+	s.contractsByAddr = byAddr
+	s.mu.Unlock()
 }
 
 func (s *contractRegistryService) listWeb3ContractsFromDB() []models.Web3ContractInfo {
@@ -163,6 +210,7 @@ func (s *contractRegistryService) applyPushToDB(pushRecordCode string) error {
 		}
 		registerContractAddressSubscription(item.NetworkCode, item.ContractAddress, current.ContractDeployTxBlockNo)
 	}
+	s.reloadContractsCache()
 
 	return nil
 }
@@ -227,19 +275,6 @@ func (s *contractRegistryService) pagePushRecordsFromDB(request models.PageReque
 		TotalCount: int(total),
 		Records:    records,
 	}
-}
-
-func (s *contractRegistryService) findContractFromDB(contractCode string) (*models.ContractInfo, error) {
-	var row store.CurrentContractConfigPO
-	if err := mysql.DB().Where("network_code = ? and contract_code = ?", configuredNetworkCode(), contractCode).First(&row).Error; err != nil {
-		return nil, errors.New("contract not found")
-	}
-	return &models.ContractInfo{
-		Code:                row.ContractCode,
-		NetworkCode:         row.NetworkCode,
-		Address:             row.ContractAddress,
-		InterfaceDefinition: row.ContractABI,
-	}, nil
 }
 
 func appendHistory(raw string, pushRecordCode string) string {

@@ -15,6 +15,7 @@ import (
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/models"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/mysql"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/store"
+	"gorm.io/gorm/clause"
 )
 
 type SubscriptionService interface {
@@ -121,12 +122,11 @@ func (s *subscriptionService) refreshTxSubscriptions(ctx context.Context) error 
 			ConfirmBlockCount: defaultTxConfirmBlockCount,
 			NextRetryAt:       time.Now().UnixMilli(),
 		}
-		var existing store.TxCallbackRecordPO
-		callbackExists := mysql.DB().Where("code = ?", record.Code).First(&existing).Error == nil
-		if callbackExists {
+		result := mysql.DB().Clauses(clause.OnConflict{DoNothing: true}).Create(&record)
+		if result.Error != nil {
 			continue
 		}
-		if err = mysql.DB().Create(&record).Error; err != nil {
+		if result.RowsAffected == 0 {
 			continue
 		}
 		if err = deliverTxCallback(&record); err == nil {
@@ -167,13 +167,13 @@ func (s *subscriptionService) checkTxCallbacks(ctx context.Context) error {
 		Find(&rows).Error; err != nil {
 		return err
 	}
+	latest, latestErr := s.eth.GetLatestBlock(ctx)
+	if latestErr != nil || latest == nil {
+		return nil
+	}
 	for _, row := range rows {
 		resp, err := s.eth.QueryTransaction(ctx, row.TxCode)
 		if err != nil {
-			continue
-		}
-		latest, latestErr := s.eth.GetLatestBlock(ctx)
-		if latestErr != nil || latest == nil {
 			continue
 		}
 		if resp == nil || !resp.IfTxOnchain || resp.Tx == nil {
@@ -218,15 +218,11 @@ func (s *subscriptionService) refreshAddressSubscriptions(ctx context.Context) e
 	if err := mysql.DB().Where("status = ?", "ACTIVE").Find(&rows).Error; err != nil {
 		return err
 	}
+	latest, err := s.eth.GetLatestBlock(ctx)
+	if err != nil || latest == nil {
+		return nil
+	}
 	for _, row := range rows {
-		latest, err := s.eth.GetLatestBlock(ctx)
-		if err != nil {
-			continue
-		}
-		if latest == nil {
-			continue
-		}
-
 		end := row.EndBlockNumber
 		if end > latest.BlockNumber {
 			end = latest.BlockNumber

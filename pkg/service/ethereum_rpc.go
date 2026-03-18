@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -36,6 +37,13 @@ type ethereumService struct {
 	network   config.NetworkConfig
 	contracts ContractRegistryService
 	tokens    TokenRegistryService
+	abiMu     sync.RWMutex
+	abiCache  map[string]cachedABI
+}
+
+type cachedABI struct {
+	definition string
+	parsed     abi.ABI
 }
 
 func NewEthereumService(contracts ContractRegistryService, tokens TokenRegistryService) EthereumService {
@@ -45,6 +53,7 @@ func NewEthereumService(contracts ContractRegistryService, tokens TokenRegistryS
 		network:   network,
 		contracts: contracts,
 		tokens:    tokens,
+		abiCache:  map[string]cachedABI{},
 	}
 }
 
@@ -159,7 +168,7 @@ func (s *ethereumService) queryNativeTransaction(ctx context.Context, txHash str
 			Fee:            calcFee(receipt.EffectiveGasPrice, receipt.GasUsed),
 			From:           tx.From,
 			To:             tx.To,
-			Amount:         models.RawNumber(hexToBigIntString(tx.Value)),
+			Amount:         hexToBigIntString(tx.Value),
 			Status:         status,
 			SequenceNumber: fmt.Sprintf("%d", hexUint64(tx.Nonce)),
 		},
@@ -167,17 +176,10 @@ func (s *ethereumService) queryNativeTransaction(ctx context.Context, txHash str
 	}
 
 	for _, logEntry := range receipt.Logs {
-		eventType, eventName, eventData := s.decodeLogEvent(networkCode, logEntry)
+		eventType, _, eventData := s.decodeLogEvent(networkCode, logEntry)
 		result.TxEvents = append(result.TxEvents, models.ChainEvent{
-			Code:        fmt.Sprintf("%s:%d", tx.Hash, hexUint64(logEntry.LogIndex)),
-			NetworkCode: networkCode,
-			BlockNumber: hexUint64(logEntry.BlockNumber),
-			Timestamp:   blockTimestamp,
-			Fee:         result.Tx.Fee,
-			Type:        eventType,
-			DataType:    eventName,
-			LogIndex:    fmt.Sprintf("%d", hexUint64(logEntry.LogIndex)),
-			Data:        eventData,
+			Type: eventType,
+			Data: eventData,
 		})
 	}
 
@@ -227,7 +229,7 @@ func (s *ethereumService) queryUserOperation(ctx context.Context, userOpHash str
 			Fee:            fee,
 			From:           receipt.Sender,
 			To:             receipt.Receipt.To,
-			Amount:         models.RawNumber("0"),
+			Amount:         "0",
 			Status:         status,
 			SequenceNumber: fmt.Sprintf("%d", hexUint64(receipt.Nonce)),
 		},
@@ -235,17 +237,10 @@ func (s *ethereumService) queryUserOperation(ctx context.Context, userOpHash str
 	}
 
 	for _, logEntry := range receipt.Logs {
-		eventType, eventName, eventData := s.decodeLogEvent(s.network.Networkcode, logEntry)
+		eventType, _, eventData := s.decodeLogEvent(s.network.Networkcode, logEntry)
 		result.TxEvents = append(result.TxEvents, models.ChainEvent{
-			Code:        fmt.Sprintf("%s:%d", userOpHash, hexUint64(logEntry.LogIndex)),
-			NetworkCode: s.network.Networkcode,
-			BlockNumber: hexUint64(logEntry.BlockNumber),
-			Timestamp:   blockTimestamp,
-			Fee:         result.Tx.Fee,
-			Type:        eventType,
-			DataType:    eventName,
-			LogIndex:    fmt.Sprintf("%d", hexUint64(logEntry.LogIndex)),
-			Data:        eventData,
+			Type: eventType,
+			Data: eventData,
 		})
 	}
 
@@ -264,7 +259,7 @@ func (s *ethereumService) GetAddressBalance(ctx context.Context, address string)
 	}
 
 	return &models.AddressBalanceResponse{
-		Balance:     models.RawNumber(formatWeiToEther(balance)),
+		Balance:     formatBigIntFloat64(balance, 18),
 		BalanceUnit: s.nativeBalanceUnit(),
 	}, nil
 }
@@ -297,7 +292,7 @@ func (s *ethereumService) GetTokenSupply(ctx context.Context, tokenCode string) 
 	if err != nil {
 		return nil, err
 	}
-	return &models.TokenSupplyResponse{Value: models.RawNumber(hexToBigIntString(value))}, nil
+	return &models.TokenSupplyResponse{Value: formatTokenAmountFloat64(value, token.Decimals)}, nil
 }
 
 func (s *ethereumService) GetTokenBalance(ctx context.Context, tokenCode, address string) (*models.TokenBalanceResponse, error) {
@@ -519,6 +514,13 @@ func formatTokenAmountFloat64(value string, decimals int) float64 {
 	if number == nil {
 		return 0
 	}
+	return formatBigIntFloat64(number, decimals)
+}
+
+func formatBigIntFloat64(number *big.Int, decimals int) float64 {
+	if number == nil {
+		return 0
+	}
 	if decimals <= 0 {
 		result, _ := new(big.Float).SetInt(number).Float64()
 		return result
@@ -558,7 +560,7 @@ func (s *ethereumService) decodeLogEvent(networkCode string, logEntry rpcLogReco
 	if contract == nil || contract.InterfaceDefinition == "" || len(logEntry.Topics) == 0 {
 		return "", "", logEntry.Data
 	}
-	parsedABI, err := abi.JSON(strings.NewReader(contract.InterfaceDefinition))
+	parsedABI, err := s.parsedABI(contract)
 	if err != nil {
 		return "", "", logEntry.Data
 	}
@@ -620,13 +622,32 @@ func (s *ethereumService) decodeLogEvent(networkCode string, logEntry rpcLogReco
 }
 
 func (s *ethereumService) findContractByAddress(address string) *models.ContractInfo {
-	for _, contract := range s.contracts.ListContracts() {
-		if strings.EqualFold(contract.Address, address) {
-			copyContract := contract
-			return &copyContract
-		}
+	returnContract, err := s.contracts.FindContractByAddress(address)
+	if err != nil {
+		return nil
 	}
-	return nil
+	return returnContract
+}
+
+func (s *ethereumService) parsedABI(contract *models.ContractInfo) (abi.ABI, error) {
+	key := strings.ToLower(contract.Address)
+	s.abiMu.RLock()
+	cached, ok := s.abiCache[key]
+	s.abiMu.RUnlock()
+	if ok && cached.definition == contract.InterfaceDefinition {
+		return cached.parsed, nil
+	}
+	parsed, err := abi.JSON(strings.NewReader(contract.InterfaceDefinition))
+	if err != nil {
+		return abi.ABI{}, err
+	}
+	s.abiMu.Lock()
+	s.abiCache[key] = cachedABI{
+		definition: contract.InterfaceDefinition,
+		parsed:     parsed,
+	}
+	s.abiMu.Unlock()
+	return parsed, nil
 }
 
 func normalizeABIValue(value interface{}) interface{} {

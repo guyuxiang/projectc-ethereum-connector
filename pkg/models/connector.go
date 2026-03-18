@@ -32,8 +32,8 @@ type AddressBalanceRequest struct {
 }
 
 type AddressBalanceResponse struct {
-	Balance     RawNumber `json:"balance"`
-	BalanceUnit string    `json:"balanceUnit"`
+	Balance     float64 `json:"balance"`
+	BalanceUnit string  `json:"balanceUnit"`
 }
 
 type LatestBlockResponse struct {
@@ -46,7 +46,7 @@ type TokenSupplyRequest struct {
 }
 
 type TokenSupplyResponse struct {
-	Value RawNumber `json:"value"`
+	Value float64 `json:"value"`
 }
 
 type TokenBalanceRequest struct {
@@ -199,26 +199,19 @@ func TimeToMillis(t time.Time) int64 {
 }
 
 type ChainTx struct {
-	Code           string    `json:"code"`
-	NetworkCode    string    `json:"networkCode"`
-	BlockNumber    uint64    `json:"blockNumber"`
-	Timestamp      uint64    `json:"timestamp"`
-	Fee            string    `json:"fee"`
-	From           string    `json:"from"`
-	To             string    `json:"to"`
-	Amount         RawNumber `json:"amount"`
-	Status         string    `json:"status"`
-	SequenceNumber string    `json:"sequenceNumber"`
+	Code           string `json:"code"`
+	NetworkCode    string `json:"networkCode"`
+	BlockNumber    uint64 `json:"blockNumber"`
+	Timestamp      uint64 `json:"timestamp"`
+	Fee            string `json:"fee"`
+	From           string `json:"from"`
+	To             string `json:"to"`
+	Amount         string `json:"amount"`
+	Status         string `json:"status"`
+	SequenceNumber string `json:"sequenceNumber"`
 }
 
 type ChainEvent struct {
-	Code        string `json:"code"`
-	NetworkCode string `json:"networkCode"`
-	BlockNumber uint64 `json:"blockNumber"`
-	Timestamp   uint64 `json:"timestamp"`
-	Fee         string `json:"fee"`
-	Type        string `json:"type"`
-	DataType    string `json:"dataType"`
-	LogIndex    string `json:"logIndex"`
-	Data        string `json:"data"`
+	Type string `json:"type"`
+	Data string `json:"data"`
 }

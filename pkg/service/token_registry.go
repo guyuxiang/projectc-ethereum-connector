@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"strings"
+	"sync"
 
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/models"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/mysql"
@@ -18,10 +19,20 @@ type TokenRegistryService interface {
 	FindTokenByAddress(address string) (*models.TokenInfo, error)
 }
 
-type tokenRegistryService struct{}
+type tokenRegistryService struct {
+	mu           sync.RWMutex
+	tokens       []models.TokenInfo
+	tokensByCode map[string]models.TokenInfo
+	tokensByAddr map[string]models.TokenInfo
+}
 
 func NewTokenRegistryService() TokenRegistryService {
-	return &tokenRegistryService{}
+	svc := &tokenRegistryService{
+		tokensByCode: map[string]models.TokenInfo{},
+		tokensByAddr: map[string]models.TokenInfo{},
+	}
+	svc.reloadCache()
+	return svc
 }
 
 func (s *tokenRegistryService) Add(req models.TokenAddRequest) (*models.TokenInfo, error) {
@@ -46,6 +57,7 @@ func (s *tokenRegistryService) Add(req models.TokenAddRequest) (*models.TokenInf
 	if err := mysql.DB().Where("code = ? and network_code = ?", row.Code, row.NetworkCode).Assign(row).FirstOrCreate(&row).Error; err != nil {
 		return nil, err
 	}
+	s.reloadCache()
 	return convertTokenRegistryPO(row), nil
 }
 
@@ -65,35 +77,59 @@ func (s *tokenRegistryService) Delete(tokenCode string) error {
 	if result.RowsAffected == 0 {
 		return errors.New("token not found")
 	}
+	s.reloadCache()
 	return nil
 }
 
 func (s *tokenRegistryService) List() ([]models.TokenInfo, error) {
-	var rows []store.TokenRegistryPO
-	if err := mysql.DB().Where("network_code = ?", configuredNetworkCode()).Order("code asc").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	result := make([]models.TokenInfo, 0, len(rows))
-	for _, row := range rows {
-		result = append(result, *convertTokenRegistryPO(row))
-	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]models.TokenInfo, len(s.tokens))
+	copy(result, s.tokens)
 	return result, nil
 }
 
 func (s *tokenRegistryService) FindToken(tokenCode string) (*models.TokenInfo, error) {
-	var row store.TokenRegistryPO
-	if err := mysql.DB().Where("code = ? and network_code = ?", strings.TrimSpace(tokenCode), configuredNetworkCode()).First(&row).Error; err != nil {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	row, ok := s.tokensByCode[strings.ToLower(strings.TrimSpace(tokenCode))]
+	if !ok {
 		return nil, errors.New("token not found")
 	}
-	return convertTokenRegistryPO(row), nil
+	token := row
+	return &token, nil
 }
 
 func (s *tokenRegistryService) FindTokenByAddress(address string) (*models.TokenInfo, error) {
-	var row store.TokenRegistryPO
-	if err := mysql.DB().Where("lower(token_address) = ? and network_code = ?", strings.ToLower(strings.TrimSpace(address)), configuredNetworkCode()).First(&row).Error; err != nil {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	row, ok := s.tokensByAddr[strings.ToLower(strings.TrimSpace(address))]
+	if !ok {
 		return nil, errors.New("token not found")
 	}
-	return convertTokenRegistryPO(row), nil
+	token := row
+	return &token, nil
+}
+
+func (s *tokenRegistryService) reloadCache() {
+	var rows []store.TokenRegistryPO
+	if err := mysql.DB().Where("network_code = ?", configuredNetworkCode()).Order("code asc").Find(&rows).Error; err != nil {
+		return
+	}
+	tokens := make([]models.TokenInfo, 0, len(rows))
+	byCode := make(map[string]models.TokenInfo, len(rows))
+	byAddr := make(map[string]models.TokenInfo, len(rows))
+	for _, row := range rows {
+		token := *convertTokenRegistryPO(row)
+		tokens = append(tokens, token)
+		byCode[strings.ToLower(token.TokenCode)] = token
+		byAddr[strings.ToLower(token.TokenAddress)] = token
+	}
+	s.mu.Lock()
+	s.tokens = tokens
+	s.tokensByCode = byCode
+	s.tokensByAddr = byAddr
+	s.mu.Unlock()
 }
 
 func convertTokenRegistryPO(row store.TokenRegistryPO) *models.TokenInfo {
