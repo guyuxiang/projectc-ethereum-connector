@@ -30,4 +30,5 @@ ethereum:
   network:
     code: "sepolia"
     rpcUrl: "https://sepolia.gateway.tenderly.co/2xRV8vQTDZE3KmbMjo4jCm"
+    bundlerUrl: "https://your-skandha-bundler"
     chainId: 11155111

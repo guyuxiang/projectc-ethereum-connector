@@ -52,9 +52,10 @@ type Ethereum struct {
 }
 
 type NetworkConfig struct {
-	Code    string `yaml:"code"`
-	RPCURL  string `yaml:"rpcUrl"`
-	ChainID int64  `yaml:"chainId"`
+	Code       string `yaml:"code"`
+	RPCURL     string `yaml:"rpcUrl"`
+	BundlerURL string `yaml:"bundlerUrl"`
+	ChainID    int64  `yaml:"chainId"`
 }
 
 type Connector struct {

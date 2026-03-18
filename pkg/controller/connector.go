@@ -46,8 +46,8 @@ func (ctl *ConnectorController) StartBackgroundLoop() {
 }
 
 // TxSend godoc
-// @Summary Send raw transaction
-// @Description Submit a signed raw EVM transaction to the configured network
+// @Summary Send transaction
+// @Description Submit either a signed raw EVM transaction or an ERC-4337 UserOperation to the configured RPC or bundler
 // @Tags Common
 // @Accept json
 // @Produce json
@@ -61,12 +61,12 @@ func (ctl *ConnectorController) TxSend(c *gin.Context) {
 	if !bindJSON(c, &req) {
 		return
 	}
-	txHash, err := ctl.eth.SendRawTransaction(c.Request.Context(), req.TxSignResult)
+	resp, err := ctl.eth.SendTransaction(c.Request.Context(), req)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, models.Success(models.TxSendResponse{TxCode: txHash}))
+	c.JSON(http.StatusOK, models.Success(resp))
 }
 
 // TxQuery godoc
