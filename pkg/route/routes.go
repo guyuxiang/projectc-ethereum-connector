@@ -43,10 +43,8 @@ func InstallRoutes(r *gin.Engine) {
 		os.Exit(1)
 	})
 
-	secured := r.Group("/")
+	secured := r.Group("/api/v1")
 	secured.Use(middleware.BasicAuthMiddleware())
-
-	secured.GET("/api/v1/ping", controller.Ping)
 
 	connectorController := controller.NewConnectorController()
 	connectorController.StartBackgroundLoop()
