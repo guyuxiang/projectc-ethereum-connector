@@ -11,7 +11,7 @@ type Response struct {
 type ErrorResponse = Response
 
 func Success(data interface{}) Response {
-	return Response{Code: 0, Message: "success", Data: data}
+	return Response{Code: 200, Message: "success", Data: data}
 }
 
 func Failure(code int, message string) Response {
