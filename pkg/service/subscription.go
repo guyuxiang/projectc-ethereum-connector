@@ -230,6 +230,15 @@ func (s *subscriptionService) refreshAddressSubscriptions(ctx context.Context) e
 		if end > latest.BlockNumber {
 			end = latest.BlockNumber
 		}
+		// When we have already caught up to the current head but the subscription
+		// itself is open-ended, keep it ACTIVE and wait for newer blocks.
+		if row.NextBlockNumber > end {
+			if row.EndBlockNumber <= latest.BlockNumber {
+				row.Status = "COMPLETED"
+				_ = mysql.DB().Save(&row).Error
+			}
+			continue
+		}
 		nextEnd := row.NextBlockNumber + 100
 		if nextEnd > end {
 			nextEnd = end
@@ -252,10 +261,9 @@ func (s *subscriptionService) refreshAddressSubscriptions(ctx context.Context) e
 		if nextEnd >= end {
 			row.Status = "COMPLETED"
 		}
-		if nextEnd < row.NextBlockNumber {
-			row.Status = "COMPLETED"
-		} else {
-			row.NextBlockNumber = nextEnd + 1
+		row.NextBlockNumber = nextEnd + 1
+		if row.EndBlockNumber > latest.BlockNumber {
+			row.Status = "ACTIVE"
 		}
 		_ = mysql.DB().Save(&row).Error
 	}
