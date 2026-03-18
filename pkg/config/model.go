@@ -49,10 +49,11 @@ type Callback struct {
 }
 
 type NetworkConfig struct {
-	Code       string `yaml:"networkCode"`
-	RPCURL     string `yaml:"rpcUrl"`
-	BundlerURL string `yaml:"bundlerUrl"`
-	ChainID    int64  `yaml:"chainId"`
+	Code         string `yaml:"networkCode"`
+	RPCURL       string `yaml:"rpcUrl"`
+	BundlerURL   string `yaml:"bundlerUrl"`
+	ChainID      int64  `yaml:"chainId"`
+	NativeSymbol string `yaml:"nativeSymbol"`
 }
 
 type WalletSigner struct {

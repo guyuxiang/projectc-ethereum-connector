@@ -122,19 +122,14 @@ MySQL 为必选依赖。
 
 主要接口分组：
 
-- `/inner/chain-invoke/:networkCode/common/*`
-- `/inner/chain-data/:networkCode/common/*`
-- `/inner/chain-data-subscribe/:networkCode/*`
-- `/inner/chain-invoke/:networkCode/wallet/*`
+- `/inner/chain-invoke/evm/common/*`
+- `/inner/chain-data/evm/common/*`
+- `/inner/chain-data-subscribe/evm/*`
+- `/inner/chain-invoke/evm/wallet/*`
 - `/inner/contract/*`
 - `/open/*`
 
 除 `/ping`、`/version`、`/swagger` 以外，其余接口默认走 Basic Auth。
-
-当前版本内部只支持单一 EVM 网络，但为了保持接口兼容，HTTP 路径仍保留 `:networkCode`。
-
-- `:networkCode` 必须与配置中的 `network.networkCode` 完全一致
-- 如果不一致，服务会直接返回 `400`
 
 ### 4.3 EVM 通用能力
 
@@ -386,6 +381,7 @@ MySQL 为必选依赖。
   - `networkCode`
   - `rpcUrl`
   - `chainId`
+  - `nativeSymbol`
 
 其中：
 
@@ -426,8 +422,6 @@ go run ./cmd
 当前服务推荐采用“一个 EVM 网络一个实例”的部署方式：
 
 1. 每个实例配置自己的 `network`
-2. 每个实例对外仍使用带 `:networkCode` 的 HTTP 路径
-3. 路径中的 `:networkCode` 必须与该实例配置网络一致
 4. 每个实例使用各自独立的 MySQL
 5. 如需支持多个网络，启动多个实例分别部署
 

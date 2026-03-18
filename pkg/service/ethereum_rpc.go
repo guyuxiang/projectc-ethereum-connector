@@ -265,7 +265,7 @@ func (s *ethereumService) GetAddressBalance(ctx context.Context, address string)
 
 	return &models.AddressBalanceResponse{
 		Balance:     models.RawNumber(formatWeiToEther(balance)),
-		BalanceUnit: "ETHER",
+		BalanceUnit: s.nativeBalanceUnit(),
 	}, nil
 }
 
@@ -278,6 +278,14 @@ func (s *ethereumService) GetLatestBlock(ctx context.Context) (*models.LatestBlo
 		BlockNumber: hexUint64(block.Number),
 		Timestamp:   hexUint64(block.Timestamp) * 1000,
 	}, nil
+}
+
+func (s *ethereumService) nativeBalanceUnit() string {
+	symbol := strings.TrimSpace(s.network.NativeSymbol)
+	if symbol == "" {
+		return "ETH"
+	}
+	return symbol
 }
 
 func (s *ethereumService) GetTokenSupply(ctx context.Context, tokenCode string) (*models.TokenSupplyResponse, error) {
