@@ -55,7 +55,7 @@ type TokenBalanceRequest struct {
 }
 
 type TokenBalanceResponse struct {
-	Value RawNumber `json:"value"`
+	Value float64 `json:"value"`
 }
 
 type TokenAddRequest struct {

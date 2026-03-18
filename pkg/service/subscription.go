@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/config"
+	"github.com/guyuxiang/projectc-ethereum-connector/pkg/log"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/models"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/mysql"
 	"github.com/guyuxiang/projectc-ethereum-connector/pkg/store"
@@ -457,6 +458,8 @@ func publishHTTPCallback(body []byte, kind string) error {
 		return fmt.Errorf("callback.txHttpUrl is required")
 	}
 
+	log.Infof("http callback request: kind=%s url=%s body=%s", kind, targetURL, string(body))
+
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequest(http.MethodPost, targetURL, strings.NewReader(string(body)))
 	if err != nil {
@@ -469,14 +472,18 @@ func publishHTTPCallback(body []byte, kind string) error {
 
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Errorf("http callback request failed: kind=%s url=%s err=%v", kind, targetURL, err)
 		return err
 	}
 	defer resp.Body.Close()
+
+	payload, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	responseBody := strings.TrimSpace(string(payload))
+	log.Infof("http callback response: kind=%s url=%s status=%d body=%s", kind, targetURL, resp.StatusCode, responseBody)
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
 
-	payload, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return fmt.Errorf("http callback failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(payload)))
+	return fmt.Errorf("http callback failed: status=%d body=%s", resp.StatusCode, responseBody)
 }

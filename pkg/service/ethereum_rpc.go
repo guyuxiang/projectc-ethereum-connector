@@ -311,7 +311,7 @@ func (s *ethereumService) GetTokenBalance(ctx context.Context, tokenCode, addres
 	if err != nil {
 		return nil, err
 	}
-	return &models.TokenBalanceResponse{Value: models.RawNumber(hexToBigIntString(value))}, nil
+	return &models.TokenBalanceResponse{Value: formatTokenAmountFloat64(value, token.Decimals)}, nil
 }
 
 func (s *ethereumService) QueryLogs(ctx context.Context, address string, fromBlock, toBlock uint64) ([]rpcLogRecord, error) {
@@ -512,6 +512,20 @@ func hexToBigIntString(value string) string {
 		return "0"
 	}
 	return number.String()
+}
+
+func formatTokenAmountFloat64(value string, decimals int) float64 {
+	number := hexToBigInt(value)
+	if number == nil {
+		return 0
+	}
+	if decimals <= 0 {
+		result, _ := new(big.Float).SetInt(number).Float64()
+		return result
+	}
+	base := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil)
+	result, _ := new(big.Float).Quo(new(big.Float).SetInt(number), new(big.Float).SetInt(base)).Float64()
+	return result
 }
 
 func hexToBigInt(value string) *big.Int {
