@@ -786,6 +786,7 @@ func (s *ethereumService) transformEventData(eventType string, contract *models.
 	}
 
 	tokenCode := s.resolveTokenCode(lowerString(firstNonNil(payload["tokenAddress"], payload["contractAddr"])))
+	tokenDecimals := s.resolveTokenDecimals(lowerString(firstNonNil(payload["tokenAddress"], payload["contractAddr"])))
 
 	var transformed interface{}
 	switch eventType {
@@ -795,7 +796,7 @@ func (s *ethereumService) transformEventData(eventType string, contract *models.
 			"tokenAddress": lowerString(payload["contractAddr"]),
 			"from":         lowerString(payload["from"]),
 			"to":           lowerString(payload["to"]),
-			"amount":       decimalString(payload["value"]),
+			"amount":       tokenAmountString(firstNonNil(payload["value"], payload["amount"]), tokenDecimals),
 		}
 	case "ROR_TRANSFER":
 		transformed = map[string]interface{}{
@@ -809,14 +810,14 @@ func (s *ethereumService) transformEventData(eventType string, contract *models.
 			"bid":       stringValue(firstNonNil(payload["txID"], payload["bid"], payload["businessId"])),
 			"tokenCode": tokenCode,
 			"recipient": lowerString(firstNonNil(payload["recipient"], payload["to"])),
-			"amount":    decimalString(firstNonNil(payload["amount"], payload["value"])),
+			"amount":    tokenAmountString(firstNonNil(payload["amount"], payload["value"]), tokenDecimals),
 		}
 	case "RT_BURN":
 		transformed = map[string]interface{}{
 			"bid":       stringValue(firstNonNil(payload["txID"], payload["bid"], payload["businessId"])),
 			"tokenCode": tokenCode,
 			"owner":     lowerString(firstNonNil(payload["owner"], payload["from"])),
-			"amount":    decimalString(firstNonNil(payload["amount"], payload["value"])),
+			"amount":    tokenAmountString(firstNonNil(payload["amount"], payload["value"]), tokenDecimals),
 		}
 	case "RT_ON_RAMP":
 		transformed = map[string]interface{}{
@@ -824,7 +825,7 @@ func (s *ethereumService) transformEventData(eventType string, contract *models.
 			"tokenAddress": lowerString(firstNonNil(payload["tokenAddress"], payload["contractAddr"])),
 			"tokenCode":    tokenCode,
 			"requester":    lowerString(payload["requester"]),
-			"value":        decimalString(firstNonNil(payload["value"], payload["amount"])),
+			"value":        tokenAmountString(firstNonNil(payload["value"], payload["amount"]), tokenDecimals),
 			"state":        stringValue(payload["state"]),
 			"extension":    stringValue(payload["extension"]),
 		}
@@ -835,7 +836,7 @@ func (s *ethereumService) transformEventData(eventType string, contract *models.
 			"tokenAddress":    lowerString(firstNonNil(payload["tokenAddress"], payload["contractAddr"])),
 			"contractAddress": lowerString(payload["contractAddr"]),
 			"encasher":        lowerString(firstNonNil(payload["requester"], payload["encasher"])),
-			"amount":          decimalString(firstNonNil(payload["value"], payload["amount"])),
+			"amount":          tokenAmountString(firstNonNil(payload["value"], payload["amount"]), tokenDecimals),
 			"encashStatus":    stringValue(firstNonNil(payload["state"], payload["encashStatus"])),
 			"extension":       stringValue(payload["extension"]),
 		}
@@ -860,7 +861,7 @@ func (s *ethereumService) transformEventData(eventType string, contract *models.
 			"sendContractAddress":  lowerString(payload["contractAddr"]),
 			"creator":              lowerString(payload["creator"]),
 			"receiver":             lowerString(payload["receiver"]),
-			"value":                decimalString(firstNonNil(payload["tokenAmount"], payload["value"])),
+			"value":                tokenAmountString(firstNonNil(payload["tokenAmount"], payload["value"]), tokenDecimals),
 			"timeScId":             stringValue(payload["timeScId"]),
 			"conditionSetId":       stringValue(firstNonNil(payload["conditionSetId"], payload["csId"])),
 			"parentBusinessId":     stringValue(payload["parentBusinessId"]),
@@ -883,8 +884,8 @@ func (s *ethereumService) transformEventData(eventType string, contract *models.
 		transformed = map[string]interface{}{
 			"bid":             stringValue(firstNonNil(payload["businessId"], payload["bid"])),
 			"subTradeId":      stringValue(firstNonNil(payload["subBusinessId"], payload["subTradeId"])),
-			"acceptedAmount":  decimalString(payload["acceptedAmount"]),
-			"remainingAmount": decimalString(payload["remainingAmount"]),
+			"acceptedAmount":  tokenAmountString(payload["acceptedAmount"], tokenDecimals),
+			"remainingAmount": tokenAmountString(payload["remainingAmount"], tokenDecimals),
 			"extension":       stringValue(payload["extension"]),
 		}
 	case "RT_SEND_CONDITION_SET_DATE":
@@ -902,7 +903,7 @@ func (s *ethereumService) transformEventData(eventType string, contract *models.
 			"tokenCode":          tokenCode,
 			"receiverAddress":    lowerString(payload["receiverAddress"]),
 			"receiverPermission": decimalString(payload["receiverPermission"]),
-			"value":              decimalString(firstNonNil(payload["amount"], payload["value"])),
+			"value":              tokenAmountString(firstNonNil(payload["amount"], payload["value"]), tokenDecimals),
 			"reason":             stringValue(payload["reason"]),
 			"extension":          stringValue(payload["extension"]),
 		}
@@ -912,7 +913,7 @@ func (s *ethereumService) transformEventData(eventType string, contract *models.
 			"tokenCode":          tokenCode,
 			"receiver":           lowerString(firstNonNil(payload["receiverAddress"], payload["receiver"])),
 			"receiverPermission": decimalString(payload["receiverPermission"]),
-			"amount":             decimalString(firstNonNil(payload["amount"], payload["value"])),
+			"amount":             tokenAmountString(firstNonNil(payload["amount"], payload["value"]), tokenDecimals),
 			"reason":             stringValue(payload["reason"]),
 		}
 	case "ROR_CONVERT":
@@ -984,14 +985,30 @@ func (s *ethereumService) transformEventData(eventType string, contract *models.
 }
 
 func (s *ethereumService) resolveTokenCode(address string) string {
-	if address == "" {
-		return ""
-	}
-	token, err := s.tokens.FindTokenByAddress(address)
-	if err != nil || token == nil {
+	token := s.resolveToken(address)
+	if token == nil {
 		return ""
 	}
 	return token.TokenCode
+}
+
+func (s *ethereumService) resolveTokenDecimals(address string) int {
+	token := s.resolveToken(address)
+	if token == nil {
+		return 0
+	}
+	return token.Decimals
+}
+
+func (s *ethereumService) resolveToken(address string) *models.TokenInfo {
+	if address == "" {
+		return nil
+	}
+	token, err := s.tokens.FindTokenByAddress(address)
+	if err != nil || token == nil {
+		return nil
+	}
+	return token
 }
 
 func convertSingleConditions(value interface{}) []map[string]interface{} {
@@ -1116,6 +1133,43 @@ func stringValue(value interface{}) string {
 
 func decimalString(value interface{}) string {
 	return stringValue(value)
+}
+
+func tokenAmountString(value interface{}, decimals int) string {
+	return formatUnitsString(decimalString(value), decimals)
+}
+
+func formatUnitsString(raw string, decimals int) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "0"
+	}
+	negative := strings.HasPrefix(raw, "-")
+	raw = strings.TrimPrefix(raw, "-")
+	raw = strings.TrimLeft(raw, "0")
+	if raw == "" {
+		return "0"
+	}
+	if decimals <= 0 {
+		if negative {
+			return "-" + raw
+		}
+		return raw
+	}
+	if len(raw) <= decimals {
+		raw = strings.Repeat("0", decimals-len(raw)+1) + raw
+	}
+	point := len(raw) - decimals
+	result := raw[:point] + "." + raw[point:]
+	result = strings.TrimRight(result, "0")
+	result = strings.TrimRight(result, ".")
+	if result == "" {
+		result = "0"
+	}
+	if negative && result != "0" {
+		return "-" + result
+	}
+	return result
 }
 
 func boolValue(value interface{}) bool {
