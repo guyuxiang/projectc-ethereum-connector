@@ -177,6 +177,9 @@ func (s *ethereumService) queryNativeTransaction(ctx context.Context, txHash str
 
 	for _, logEntry := range receipt.Logs {
 		eventType, _, eventData := s.decodeLogEvent(networkCode, logEntry)
+		if strings.TrimSpace(eventType) == "" {
+			continue
+		}
 		result.TxEvents = append(result.TxEvents, models.ChainEvent{
 			Type: eventType,
 			Data: decodeEventDataValue(eventData),
@@ -238,6 +241,9 @@ func (s *ethereumService) queryUserOperation(ctx context.Context, userOpHash str
 
 	for _, logEntry := range receipt.Logs {
 		eventType, _, eventData := s.decodeLogEvent(s.network.Networkcode, logEntry)
+		if strings.TrimSpace(eventType) == "" {
+			continue
+		}
 		result.TxEvents = append(result.TxEvents, models.ChainEvent{
 			Type: eventType,
 			Data: decodeEventDataValue(eventData),
