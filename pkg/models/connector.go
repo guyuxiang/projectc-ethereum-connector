@@ -65,7 +65,7 @@ type TokenAddRequest struct {
 }
 
 type TokenGetRequest struct {
-	TokenCode string `json:"tokenCode"`
+	TokenCode string `json:"code"`
 }
 
 type TokenDeleteRequest struct {
