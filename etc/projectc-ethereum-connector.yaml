@@ -15,20 +15,20 @@ mysql:
   host: "mysql01.dev.lls.com"
   port: 4120
   database: "projectc-sepolia-connector"
-  maxOpenconns: 200
-  maxIdleConns: 200
-  connMaxLifeSec: 300
+  maxopenconns: 200
+  maxidleconns: 200
+  connmaxlifesec: 300
 callback:
   username: "test"
   password: "test"
-  txHttpUrl: "http://unblock-custodial-wallet/api/v1/inner/wallet/callback/tx"
-  rollbackHttpUrl: "http://unblock-custodial-wallet/api/v1/inner/wallet/callback/rollback"
+  txhttpurl: "http://unblock-custodial-wallet/api/v1/inner/wallet/callback/tx"
+  rollbackhttpurl: "http://unblock-custodial-wallet/api/v1/inner/wallet/callback/rollback"
 wallet:
-  fromAddress: "0x6d00479f9bd0A2Ae1801b9AD208204578B4978cD"
-  privateKey: "8e948e8f61e7468921b55e2581b6964174bb54f73492768f08d9c3e84f84518d"
+  fromaddress: "0x6d00479f9bd0A2Ae1801b9AD208204578B4978cD"
+  privatekey: "8e948e8f61e7468921b55e2581b6964174bb54f73492768f08d9c3e84f84518d"
 network:
-  networkCode: "sepolia"
-  rpcUrl: "https://sepolia.gateway.tenderly.co/2xRV8vQTDZE3KmbMjo4jCm"
-  bundlerUrl: "https://your-skandha-bundler"
-  chainId: 11155111
-  nativeSymbol: "ETH"
+  networkcode: "sepolia"
+  rpcurl: "https://sepolia.gateway.tenderly.co/2xRV8vQTDZE3KmbMjo4jCm"
+  bundlerurl: "https://your-skandha-bundler"
+  chainid: 11155111
+  nativesymbol: "ETH"

@@ -123,7 +123,7 @@ func (s *ethereumService) QueryTransaction(ctx context.Context, txHash string) (
 }
 
 func (s *ethereumService) queryNativeTransaction(ctx context.Context, txHash string) (*models.TxQueryResponse, error) {
-	networkCode := s.network.Code
+	networkCode := s.network.Networkcode
 	var tx rpcTransaction
 	if err := s.rpcCall(ctx, "eth_getTransactionByHash", []interface{}{txHash}, &tx); err != nil {
 		return nil, err
@@ -221,7 +221,7 @@ func (s *ethereumService) queryUserOperation(ctx context.Context, userOpHash str
 		IfTxOnchain: true,
 		Tx: &models.ChainTx{
 			Code:           userOpHash,
-			NetworkCode:    s.network.Code,
+			NetworkCode:    s.network.Networkcode,
 			BlockNumber:    hexUint64(receipt.Receipt.BlockNumber),
 			Timestamp:      blockTimestamp,
 			Fee:            fee,
@@ -235,10 +235,10 @@ func (s *ethereumService) queryUserOperation(ctx context.Context, userOpHash str
 	}
 
 	for _, logEntry := range receipt.Logs {
-		eventType, eventName, eventData := s.decodeLogEvent(s.network.Code, logEntry)
+		eventType, eventName, eventData := s.decodeLogEvent(s.network.Networkcode, logEntry)
 		result.TxEvents = append(result.TxEvents, models.ChainEvent{
 			Code:        fmt.Sprintf("%s:%d", userOpHash, hexUint64(logEntry.LogIndex)),
-			NetworkCode: s.network.Code,
+			NetworkCode: s.network.Networkcode,
 			BlockNumber: hexUint64(logEntry.BlockNumber),
 			Timestamp:   blockTimestamp,
 			Fee:         result.Tx.Fee,
@@ -281,7 +281,7 @@ func (s *ethereumService) GetLatestBlock(ctx context.Context) (*models.LatestBlo
 }
 
 func (s *ethereumService) nativeBalanceUnit() string {
-	symbol := strings.TrimSpace(s.network.NativeSymbol)
+	symbol := strings.TrimSpace(s.network.Nativesymbol)
 	if symbol == "" {
 		return "ETH"
 	}
@@ -329,7 +329,7 @@ func (s *ethereumService) QueryLogs(ctx context.Context, address string, fromBlo
 }
 
 func (s *ethereumService) DecodeLogEvent(logEntry rpcLogRecord) (string, string, string) {
-	return s.decodeLogEvent(s.network.Code, logEntry)
+	return s.decodeLogEvent(s.network.Networkcode, logEntry)
 }
 
 func (s *ethereumService) getBlockByNumber(ctx context.Context, blockNumber string) (*rpcBlock, error) {
@@ -352,16 +352,16 @@ func (s *ethereumService) ethCall(ctx context.Context, to, data string) (string,
 }
 
 func (s *ethereumService) bundlerURL() string {
-	if strings.TrimSpace(s.network.BundlerURL) != "" {
-		return s.network.BundlerURL
+	if strings.TrimSpace(s.network.Bundlerurl) != "" {
+		return s.network.Bundlerurl
 	}
-	return s.network.RPCURL
+	return s.network.Rpcurl
 }
 
 var errRPCNullResult = errors.New("rpc returned null result")
 
 func (s *ethereumService) rpcCall(ctx context.Context, method string, params []interface{}, out interface{}) error {
-	return s.rpcCallToURL(ctx, s.network.RPCURL, method, params, out)
+	return s.rpcCallToURL(ctx, s.network.Rpcurl, method, params, out)
 }
 
 func (s *ethereumService) rpcCallToURL(ctx context.Context, rpcURL, method string, params []interface{}, out interface{}) error {

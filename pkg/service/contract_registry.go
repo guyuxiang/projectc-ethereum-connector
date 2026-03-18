@@ -32,7 +32,7 @@ func NewContractRegistryService() ContractRegistryService {
 
 	cfg := config.GetConfig()
 	if cfg.Network != nil {
-		svc.networks[cfg.Network.Code] = *cfg.Network
+		svc.networks[cfg.Network.Networkcode] = *cfg.Network
 	}
 
 	return svc
@@ -93,9 +93,9 @@ func (s *contractRegistryService) listWeb3ContractsFromDB() []models.Web3Contrac
 				ABI:         contract.InterfaceDefinition,
 			},
 			Network: models.Web3Network{
-				Code:        network.Code,
-				NodeAddress: network.RPCURL,
-				ChainID:     network.ChainID,
+				Code:        network.Networkcode,
+				NodeAddress: network.Rpcurl,
+				ChainID:     network.Chainid,
 			},
 		})
 	}

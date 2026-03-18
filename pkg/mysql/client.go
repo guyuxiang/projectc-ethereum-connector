@@ -64,14 +64,14 @@ func Close() error {
 }
 
 func configurePool(sqlDB *sql.DB, cfg *config.MySQL) {
-	if cfg.MaxIdleConns > 0 {
-		sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
+	if cfg.Maxidleconns > 0 {
+		sqlDB.SetMaxIdleConns(cfg.Maxidleconns)
 	}
-	if cfg.MaxOpenConns > 0 {
-		sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
+	if cfg.Maxopenconns > 0 {
+		sqlDB.SetMaxOpenConns(cfg.Maxopenconns)
 	}
-	if cfg.ConnMaxLifeSec > 0 {
-		sqlDB.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifeSec) * time.Second)
+	if cfg.Connmaxlifesec > 0 {
+		sqlDB.SetConnMaxLifetime(time.Duration(cfg.Connmaxlifesec) * time.Second)
 		return
 	}
 	sqlDB.SetConnMaxLifetime(time.Hour)

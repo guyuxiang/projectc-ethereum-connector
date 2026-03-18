@@ -46,20 +46,20 @@ func (s *walletService) createNativeChargePrepared(ctx context.Context, req mode
 	if err != nil {
 		return nil, err
 	}
-	networkCode := networkCfg.Code
+	networkCode := networkCfg.Networkcode
 
-	client, err := ethclient.DialContext(ctx, networkCfg.RPCURL)
+	client, err := ethclient.DialContext(ctx, networkCfg.Rpcurl)
 	if err != nil {
 		return nil, err
 	}
 	defer client.Close()
 
-	privateKey, err := crypto.HexToECDSA(strings.TrimPrefix(walletCfg.PrivateKey, "0x"))
+	privateKey, err := crypto.HexToECDSA(strings.TrimPrefix(walletCfg.Privatekey, "0x"))
 	if err != nil {
 		return nil, err
 	}
 	signerAddress := crypto.PubkeyToAddress(privateKey.PublicKey)
-	if walletCfg.FromAddress != "" && !strings.EqualFold(walletCfg.FromAddress, signerAddress.Hex()) {
+	if walletCfg.Fromaddress != "" && !strings.EqualFold(walletCfg.Fromaddress, signerAddress.Hex()) {
 		return nil, errors.New("wallet fromAddress does not match privateKey")
 	}
 
@@ -94,7 +94,7 @@ func (s *walletService) createNativeChargePrepared(ctx context.Context, req mode
 	gasLimit := uint64(21000)
 
 	tx := types.NewTx(&types.DynamicFeeTx{
-		ChainID:   big.NewInt(networkCfg.ChainID),
+		ChainID:   big.NewInt(networkCfg.Chainid),
 		Nonce:     nonce,
 		To:        &to,
 		Value:     valueWei,
@@ -102,7 +102,7 @@ func (s *walletService) createNativeChargePrepared(ctx context.Context, req mode
 		GasTipCap: tipCap,
 		GasFeeCap: gasFeeCap,
 	})
-	signedTx, err := types.SignTx(tx, types.LatestSignerForChainID(big.NewInt(networkCfg.ChainID)), privateKey)
+	signedTx, err := types.SignTx(tx, types.LatestSignerForChainID(big.NewInt(networkCfg.Chainid)), privateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func findWalletConfig() (config.WalletSigner, config.NetworkConfig, error) {
 	if err != nil {
 		return config.WalletSigner{}, config.NetworkConfig{}, err
 	}
-	if cfg.Wallet.PrivateKey == "" {
+	if cfg.Wallet.Privatekey == "" {
 		return config.WalletSigner{}, config.NetworkConfig{}, errors.New("wallet config not found")
 	}
 	return *cfg.Wallet, network, nil

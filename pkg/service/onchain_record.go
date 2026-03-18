@@ -103,7 +103,7 @@ func (s *onchainRecordService) Submit(ctx context.Context, code string) error {
 	if err != nil {
 		return err
 	}
-	client, err := ethclient.DialContext(ctx, network.RPCURL)
+	client, err := ethclient.DialContext(ctx, network.Rpcurl)
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func (s *onchainRecordService) Refresh(ctx context.Context) error {
 		if err != nil {
 			continue
 		}
-		client, err := ethclient.DialContext(ctx, network.RPCURL)
+		client, err := ethclient.DialContext(ctx, network.Rpcurl)
 		if err != nil {
 			continue
 		}

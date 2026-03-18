@@ -11,10 +11,10 @@ func configuredNetwork() (config.NetworkConfig, error) {
 	if cfg.Network == nil {
 		return config.NetworkConfig{}, errors.New("network config not found")
 	}
-	if cfg.Network.RPCURL == "" {
+	if cfg.Network.Rpcurl == "" {
 		return config.NetworkConfig{}, errors.New("network rpcUrl is required")
 	}
-	if cfg.Network.Code == "" {
+	if cfg.Network.Networkcode == "" {
 		return config.NetworkConfig{}, errors.New("network code is required")
 	}
 	return *cfg.Network, nil
@@ -25,7 +25,7 @@ func configuredNetworkCode() string {
 	if err != nil {
 		return ""
 	}
-	return network.Code
+	return network.Networkcode
 }
 
 func ConfiguredNetworkCode() string {

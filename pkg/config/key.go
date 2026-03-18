@@ -15,7 +15,7 @@ const (
 	FLAG_KEY_MYSQL_HOST     = "mysql.host"
 	FLAG_KEY_MYSQL_PORT     = "mysql.port"
 	FLAG_KEY_MYSQL_DATABASE = "mysql.database"
-	FLAG_KEY_MYSQL_MAX_IDLE = "mysql.maxIdleConns"
-	FLAG_KEY_MYSQL_MAX_OPEN = "mysql.maxOpenconns"
-	FLAG_KEY_MYSQL_MAX_LIFE = "mysql.connMaxLifeSec"
+	FLAG_KEY_MYSQL_MAX_IDLE = "mysql.maxidleconns"
+	FLAG_KEY_MYSQL_MAX_OPEN = "mysql.maxopenconns"
+	FLAG_KEY_MYSQL_MAX_LIFE = "mysql.connmaxlifesec"
 )

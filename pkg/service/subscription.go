@@ -438,9 +438,9 @@ func publishHTTPCallback(body []byte, kind string) error {
 		return fmt.Errorf("callback config is required")
 	}
 
-	targetURL := strings.TrimSpace(cfg.Callback.TxHTTPURL)
+	targetURL := strings.TrimSpace(cfg.Callback.Txhttpurl)
 	if kind == callbackKindRollback {
-		targetURL = strings.TrimSpace(cfg.Callback.RollbackHTTPURL)
+		targetURL = strings.TrimSpace(cfg.Callback.Rollbackhttpurl)
 	}
 	if targetURL == "" {
 		if kind == callbackKindRollback {

@@ -36,27 +36,27 @@ type MySQL struct {
 	Host           string `yaml:"host"`
 	Port           int    `yaml:"port"`
 	Database       string `yaml:"database"`
-	MaxOpenConns   int    `yaml:"maxOpenconns"`
-	MaxIdleConns   int    `yaml:"maxIdleConns"`
-	ConnMaxLifeSec int    `yaml:"connMaxLifeSec"`
+	Maxopenconns   int    `yaml:"maxopenconns"`
+	Maxidleconns   int    `yaml:"maxidleconns"`
+	Connmaxlifesec int    `yaml:"connmaxlifesec"`
 }
 
 type Callback struct {
 	Username        string `yaml:"username"`
 	Password        string `yaml:"password"`
-	TxHTTPURL       string `yaml:"txHttpUrl"`
-	RollbackHTTPURL string `yaml:"rollbackHttpUrl"`
+	Txhttpurl       string `yaml:"txhttpurl"`
+	Rollbackhttpurl string `yaml:"rollbackhttpurl"`
 }
 
 type NetworkConfig struct {
-	Code         string `yaml:"networkCode"`
-	RPCURL       string `yaml:"rpcUrl"`
-	BundlerURL   string `yaml:"bundlerUrl"`
-	ChainID      int64  `yaml:"chainId"`
-	NativeSymbol string `yaml:"nativeSymbol"`
+	Networkcode  string `yaml:"networkcode"`
+	Rpcurl       string `yaml:"rpcurl"`
+	Bundlerurl   string `yaml:"bundlerurl"`
+	Chainid      int64  `yaml:"chainid"`
+	Nativesymbol string `yaml:"nativesymbol"`
 }
 
 type WalletSigner struct {
-	FromAddress string `yaml:"fromAddress"`
-	PrivateKey  string `yaml:"privateKey"`
+	Fromaddress string `yaml:"fromaddress"`
+	Privatekey  string `yaml:"privatekey"`
 }
