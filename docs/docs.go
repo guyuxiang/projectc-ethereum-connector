@@ -756,7 +756,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/contract/{networkCode}/list": {
+        "/inner/contract/list/{networkCode}": {
             "post": {
                 "description": "Query currently applied contract configurations for the configured network",
                 "produces": [

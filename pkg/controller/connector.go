@@ -391,7 +391,7 @@ func (ctl *ConnectorController) AddressSubscribeCancel(c *gin.Context) {
 // @Param networkCode path string true "Configured network code"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/contract/{networkCode}/list [post]
+// @Router /inner/contract/list/{networkCode} [post]
 func (ctl *ConnectorController) ContractList(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(models.ContractListResponse{
 		ContractInfos: ctl.contracts.ListContracts(),

@@ -72,7 +72,7 @@ func InstallRoutes(r *gin.Engine) {
 	networkScoped.POST("/inner/chain-data-subscribe/:networkCode/tx-subscribe-cancel", connectorController.TxSubscribeCancel)
 	networkScoped.POST("/inner/chain-data-subscribe/:networkCode/address-subscribe-cancel", connectorController.AddressSubscribeCancel)
 
-	networkScoped.POST("/inner/contract/:networkCode/list", connectorController.ContractList)
+	networkScoped.POST("/inner/contract/list/:networkCode", connectorController.ContractList)
 	secured.POST("/inner/contract/contract-config-push-record/push", connectorController.ContractPush)
 
 	secured.POST("/open/all-clients/contract/web3-contract-info", connectorController.Web3ContractInfo)

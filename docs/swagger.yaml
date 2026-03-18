@@ -616,30 +616,6 @@ paths:
       summary: Send native token
       tags:
       - Wallet
-  /inner/contract/{networkCode}/list:
-    post:
-      description: Query currently applied contract configurations for the configured
-        network
-      parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/models.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/models.Response'
-      summary: List current contracts
-      tags:
-      - Contract
   /inner/contract/contract-config-push-record/push:
     post:
       consumes:
@@ -664,6 +640,30 @@ paths:
           schema:
             $ref: '#/definitions/models.Response'
       summary: Push contract config
+      tags:
+      - Contract
+  /inner/contract/list/{networkCode}:
+    post:
+      description: Query currently applied contract configurations for the configured
+        network
+      parameters:
+      - description: Configured network code
+        in: path
+        name: networkCode
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: List current contracts
       tags:
       - Contract
   /open/all-clients/contract/web3-contract-info:
