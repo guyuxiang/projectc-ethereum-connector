@@ -51,11 +51,10 @@ func (ctl *ConnectorController) StartBackgroundLoop() {
 // @Tags Common
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.TxSendRequest true "Signed transaction payload"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/chain-invoke/{networkCode}/common/tx-send [post]
+// @Router /inner/chain-invoke/evm/common/tx-send [post]
 func (ctl *ConnectorController) TxSend(c *gin.Context) {
 	var req models.TxSendRequest
 	if !bindJSON(c, &req) {
@@ -75,11 +74,10 @@ func (ctl *ConnectorController) TxSend(c *gin.Context) {
 // @Tags Common
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.TxQueryRequest true "Transaction query payload"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/chain-data/{networkCode}/common/tx-query [post]
+// @Router /inner/chain-data/evm/common/tx-query [post]
 func (ctl *ConnectorController) TxQuery(c *gin.Context) {
 	var req models.TxQueryRequest
 	if !bindJSON(c, &req) {
@@ -99,11 +97,10 @@ func (ctl *ConnectorController) TxQuery(c *gin.Context) {
 // @Tags Common
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.AddressBalanceRequest true "Address balance query payload"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/chain-data/{networkCode}/common/address-balance [post]
+// @Router /inner/chain-data/evm/common/address-balance [post]
 func (ctl *ConnectorController) AddressBalance(c *gin.Context) {
 	var req models.AddressBalanceRequest
 	if !bindJSON(c, &req) {
@@ -122,10 +119,9 @@ func (ctl *ConnectorController) AddressBalance(c *gin.Context) {
 // @Description Query latest block number and timestamp from the configured network
 // @Tags Common
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/chain-data/{networkCode}/common/latest-block [post]
+// @Router /inner/chain-data/evm/common/latest-block [post]
 func (ctl *ConnectorController) LatestBlock(c *gin.Context) {
 	resp, err := ctl.eth.GetLatestBlock(c.Request.Context())
 	if err != nil {
@@ -141,11 +137,10 @@ func (ctl *ConnectorController) LatestBlock(c *gin.Context) {
 // @Tags Common
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.TokenSupplyRequest true "Token supply query payload"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/chain-data/{networkCode}/common/token-supply [post]
+// @Router /inner/chain-data/evm/common/token-supply [post]
 func (ctl *ConnectorController) TokenSupply(c *gin.Context) {
 	var req models.TokenSupplyRequest
 	if !bindJSON(c, &req) {
@@ -165,11 +160,10 @@ func (ctl *ConnectorController) TokenSupply(c *gin.Context) {
 // @Tags Common
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.TokenBalanceRequest true "Token balance query payload"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/chain-data/{networkCode}/common/token-balance [post]
+// @Router /inner/chain-data/evm/common/token-balance [post]
 func (ctl *ConnectorController) TokenBalance(c *gin.Context) {
 	var req models.TokenBalanceRequest
 	if !bindJSON(c, &req) {
@@ -189,11 +183,10 @@ func (ctl *ConnectorController) TokenBalance(c *gin.Context) {
 // @Tags Common
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.TokenAddRequest true "Token add request"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.ErrorResponse
-// @Router /inner/chain-data/{networkCode}/common/token-add [post]
+// @Router /inner/chain-data/evm/common/token-add [post]
 func (ctl *ConnectorController) TokenAdd(c *gin.Context) {
 	var req models.TokenAddRequest
 	if !bindJSON(c, &req) {
@@ -213,11 +206,10 @@ func (ctl *ConnectorController) TokenAdd(c *gin.Context) {
 // @Tags Common
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.TokenDeleteRequest true "Token delete request"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.ErrorResponse
-// @Router /inner/chain-data/{networkCode}/common/token-delete [post]
+// @Router /inner/chain-data/evm/common/token-delete [post]
 func (ctl *ConnectorController) TokenDelete(c *gin.Context) {
 	var req models.TokenDeleteRequest
 	if !bindJSON(c, &req) {
@@ -236,11 +228,10 @@ func (ctl *ConnectorController) TokenDelete(c *gin.Context) {
 // @Tags Common
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.TokenGetRequest true "Token get request"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.ErrorResponse
-// @Router /inner/chain-data/{networkCode}/common/token-get [post]
+// @Router /inner/chain-data/evm/common/token-get [post]
 func (ctl *ConnectorController) TokenGet(c *gin.Context) {
 	var req models.TokenGetRequest
 	if !bindJSON(c, &req) {
@@ -260,11 +251,10 @@ func (ctl *ConnectorController) TokenGet(c *gin.Context) {
 // @Tags Common
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.TokenListRequest true "Token list request"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.ErrorResponse
-// @Router /inner/chain-data/{networkCode}/common/token-list [post]
+// @Router /inner/chain-data/evm/common/token-list [post]
 func (ctl *ConnectorController) TokenList(c *gin.Context) {
 	var req models.TokenListRequest
 	if !bindJSON(c, &req) {
@@ -284,11 +274,10 @@ func (ctl *ConnectorController) TokenList(c *gin.Context) {
 // @Tags Wallet
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.BalanceChargeRequest true "Wallet transfer payload"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/chain-invoke/{networkCode}/wallet/faucet [post]
+// @Router /inner/chain-invoke/evm/wallet/faucet [post]
 func (ctl *ConnectorController) Faucet(c *gin.Context) {
 	var req models.BalanceChargeRequest
 	if !bindJSON(c, &req) {
@@ -309,11 +298,10 @@ func (ctl *ConnectorController) Faucet(c *gin.Context) {
 // @Tags Subscription
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.TxSubscribeRequest true "Transaction subscription payload"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/chain-data-subscribe/{networkCode}/tx-subscribe [post]
+// @Router /inner/chain-data-subscribe/evm/tx-subscribe [post]
 func (ctl *ConnectorController) TxSubscribe(c *gin.Context) {
 	var req models.TxSubscribeRequest
 	if !bindJSON(c, &req) {
@@ -329,11 +317,10 @@ func (ctl *ConnectorController) TxSubscribe(c *gin.Context) {
 // @Tags Subscription
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.AddressSubscribeRequest true "Contract address subscription payload"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/chain-data-subscribe/{networkCode}/address-subscribe [post]
+// @Router /inner/chain-data-subscribe/evm/address-subscribe [post]
 func (ctl *ConnectorController) AddressSubscribe(c *gin.Context) {
 	var req models.AddressSubscribeRequest
 	if !bindJSON(c, &req) {
@@ -349,11 +336,10 @@ func (ctl *ConnectorController) AddressSubscribe(c *gin.Context) {
 // @Tags Subscription
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.TxSubscribeCancelRequest true "Transaction subscription cancel payload"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/chain-data-subscribe/{networkCode}/tx-subscribe-cancel [post]
+// @Router /inner/chain-data-subscribe/evm/tx-subscribe-cancel [post]
 func (ctl *ConnectorController) TxSubscribeCancel(c *gin.Context) {
 	var req models.TxSubscribeCancelRequest
 	if !bindJSON(c, &req) {
@@ -369,11 +355,10 @@ func (ctl *ConnectorController) TxSubscribeCancel(c *gin.Context) {
 // @Tags Subscription
 // @Accept json
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Param request body models.AddressSubscribeCancelRequest true "Contract address subscription cancel payload"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/chain-data-subscribe/{networkCode}/address-subscribe-cancel [post]
+// @Router /inner/chain-data-subscribe/evm/address-subscribe-cancel [post]
 func (ctl *ConnectorController) AddressSubscribeCancel(c *gin.Context) {
 	var req models.AddressSubscribeCancelRequest
 	if !bindJSON(c, &req) {
@@ -388,10 +373,9 @@ func (ctl *ConnectorController) AddressSubscribeCancel(c *gin.Context) {
 // @Description Query currently applied contract configurations for the configured network
 // @Tags Contract
 // @Produce json
-// @Param networkCode path string true "Configured network code"
 // @Success 200 {object} models.Response
 // @Failure 400 {object} models.Response
-// @Router /inner/contract/list/{networkCode} [post]
+// @Router /inner/contract/list/evm [post]
 func (ctl *ConnectorController) ContractList(c *gin.Context) {
 	c.JSON(http.StatusOK, models.Success(models.ContractListResponse{
 		ContractInfos: ctl.contracts.ListContracts(),

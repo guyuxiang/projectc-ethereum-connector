@@ -153,18 +153,13 @@ info:
   title: Swagger projectc-ethereum-connector
   version: 0.1.0
 paths:
-  /inner/chain-data-subscribe/{networkCode}/address-subscribe:
+  /inner/chain-data-subscribe/evm/address-subscribe:
     post:
       consumes:
       - application/json
       description: Register a contract-address log subscription based on eth_getLogs
         for callback processing
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Contract address subscription payload
         in: body
         name: request
@@ -185,17 +180,12 @@ paths:
       summary: Subscribe contract address logs
       tags:
       - Subscription
-  /inner/chain-data-subscribe/{networkCode}/address-subscribe-cancel:
+  /inner/chain-data-subscribe/evm/address-subscribe-cancel:
     post:
       consumes:
       - application/json
       description: Update or stop a contract-address log subscription
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Contract address subscription cancel payload
         in: body
         name: request
@@ -216,17 +206,12 @@ paths:
       summary: Cancel contract address log subscription
       tags:
       - Subscription
-  /inner/chain-data-subscribe/{networkCode}/tx-subscribe:
+  /inner/chain-data-subscribe/evm/tx-subscribe:
     post:
       consumes:
       - application/json
       description: Register a transaction subscription for callback processing
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Transaction subscription payload
         in: body
         name: request
@@ -247,17 +232,12 @@ paths:
       summary: Subscribe transaction
       tags:
       - Subscription
-  /inner/chain-data-subscribe/{networkCode}/tx-subscribe-cancel:
+  /inner/chain-data-subscribe/evm/tx-subscribe-cancel:
     post:
       consumes:
       - application/json
       description: Cancel a registered transaction subscription
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Transaction subscription cancel payload
         in: body
         name: request
@@ -278,17 +258,12 @@ paths:
       summary: Cancel transaction subscription
       tags:
       - Subscription
-  /inner/chain-data/{networkCode}/common/address-balance:
+  /inner/chain-data/evm/common/address-balance:
     post:
       consumes:
       - application/json
       description: Query native token balance of an address on the configured network
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Address balance query payload
         in: body
         name: request
@@ -309,15 +284,9 @@ paths:
       summary: Query address balance
       tags:
       - Common
-  /inner/chain-data/{networkCode}/common/latest-block:
+  /inner/chain-data/evm/common/latest-block:
     post:
       description: Query latest block number and timestamp from the configured network
-      parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       produces:
       - application/json
       responses:
@@ -332,17 +301,12 @@ paths:
       summary: Query latest block
       tags:
       - Common
-  /inner/chain-data/{networkCode}/common/token-add:
+  /inner/chain-data/evm/common/token-add:
     post:
       consumes:
       - application/json
       description: Add a token definition into database-backed EVM token registry.
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Token add request
         in: body
         name: request
@@ -363,18 +327,13 @@ paths:
       summary: Add or update token
       tags:
       - Common
-  /inner/chain-data/{networkCode}/common/token-balance:
+  /inner/chain-data/evm/common/token-balance:
     post:
       consumes:
       - application/json
       description: Query token balance of an address for a token configured in the
         database-backed EVM token registry
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Token balance query payload
         in: body
         name: request
@@ -395,18 +354,13 @@ paths:
       summary: Query token balance
       tags:
       - Common
-  /inner/chain-data/{networkCode}/common/token-delete:
+  /inner/chain-data/evm/common/token-delete:
     post:
       consumes:
       - application/json
       description: Delete a token definition from database-backed EVM token registry
         by token code.
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Token delete request
         in: body
         name: request
@@ -427,18 +381,13 @@ paths:
       summary: Delete token
       tags:
       - Common
-  /inner/chain-data/{networkCode}/common/token-get:
+  /inner/chain-data/evm/common/token-get:
     post:
       consumes:
       - application/json
       description: Get a token definition from database-backed EVM token registry
         by token code.
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Token get request
         in: body
         name: request
@@ -459,17 +408,12 @@ paths:
       summary: Get token
       tags:
       - Common
-  /inner/chain-data/{networkCode}/common/token-list:
+  /inner/chain-data/evm/common/token-list:
     post:
       consumes:
       - application/json
       description: List token definitions from database-backed EVM token registry.
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Token list request
         in: body
         name: request
@@ -490,18 +434,13 @@ paths:
       summary: List tokens
       tags:
       - Common
-  /inner/chain-data/{networkCode}/common/token-supply:
+  /inner/chain-data/evm/common/token-supply:
     post:
       consumes:
       - application/json
       description: Query total supply of a token configured in the database-backed
         EVM token registry
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Token supply query payload
         in: body
         name: request
@@ -522,17 +461,12 @@ paths:
       summary: Query token supply
       tags:
       - Common
-  /inner/chain-data/{networkCode}/common/tx-query:
+  /inner/chain-data/evm/common/tx-query:
     post:
       consumes:
       - application/json
       description: Query transaction status and decoded events by transaction hash
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Transaction query payload
         in: body
         name: request
@@ -553,18 +487,13 @@ paths:
       summary: Query transaction
       tags:
       - Common
-  /inner/chain-invoke/{networkCode}/common/tx-send:
+  /inner/chain-invoke/evm/common/tx-send:
     post:
       consumes:
       - application/json
       description: Submit either a signed raw EVM transaction or an ERC-4337 UserOperation
         to the configured RPC or bundler
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Signed transaction payload
         in: body
         name: request
@@ -585,17 +514,12 @@ paths:
       summary: Send transaction
       tags:
       - Common
-  /inner/chain-invoke/{networkCode}/wallet/faucet:
+  /inner/chain-invoke/evm/wallet/faucet:
     post:
       consumes:
       - application/json
       description: Create and submit a native token transfer from the configured wallet
       parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       - description: Wallet transfer payload
         in: body
         name: request
@@ -642,16 +566,10 @@ paths:
       summary: Push contract config
       tags:
       - Contract
-  /inner/contract/list/{networkCode}:
+  /inner/contract/list/evm:
     post:
       description: Query currently applied contract configurations for the configured
         network
-      parameters:
-      - description: Configured network code
-        in: path
-        name: networkCode
-        required: true
-        type: string
       produces:
       - application/json
       responses:

@@ -23,7 +23,7 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/inner/chain-data-subscribe/{networkCode}/address-subscribe": {
+        "/inner/chain-data-subscribe/evm/address-subscribe": {
             "post": {
                 "description": "Register a contract-address log subscription based on eth_getLogs for callback processing",
                 "consumes": [
@@ -37,13 +37,6 @@ const docTemplate = `{
                 ],
                 "summary": "Subscribe contract address logs",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Contract address subscription payload",
                         "name": "request",
@@ -70,7 +63,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-data-subscribe/{networkCode}/address-subscribe-cancel": {
+        "/inner/chain-data-subscribe/evm/address-subscribe-cancel": {
             "post": {
                 "description": "Update or stop a contract-address log subscription",
                 "consumes": [
@@ -84,13 +77,6 @@ const docTemplate = `{
                 ],
                 "summary": "Cancel contract address log subscription",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Contract address subscription cancel payload",
                         "name": "request",
@@ -117,7 +103,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-data-subscribe/{networkCode}/tx-subscribe": {
+        "/inner/chain-data-subscribe/evm/tx-subscribe": {
             "post": {
                 "description": "Register a transaction subscription for callback processing",
                 "consumes": [
@@ -131,13 +117,6 @@ const docTemplate = `{
                 ],
                 "summary": "Subscribe transaction",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Transaction subscription payload",
                         "name": "request",
@@ -164,7 +143,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-data-subscribe/{networkCode}/tx-subscribe-cancel": {
+        "/inner/chain-data-subscribe/evm/tx-subscribe-cancel": {
             "post": {
                 "description": "Cancel a registered transaction subscription",
                 "consumes": [
@@ -178,13 +157,6 @@ const docTemplate = `{
                 ],
                 "summary": "Cancel transaction subscription",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Transaction subscription cancel payload",
                         "name": "request",
@@ -211,7 +183,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-data/{networkCode}/common/address-balance": {
+        "/inner/chain-data/evm/common/address-balance": {
             "post": {
                 "description": "Query native token balance of an address on the configured network",
                 "consumes": [
@@ -225,13 +197,6 @@ const docTemplate = `{
                 ],
                 "summary": "Query address balance",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Address balance query payload",
                         "name": "request",
@@ -258,7 +223,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-data/{networkCode}/common/latest-block": {
+        "/inner/chain-data/evm/common/latest-block": {
             "post": {
                 "description": "Query latest block number and timestamp from the configured network",
                 "produces": [
@@ -268,15 +233,6 @@ const docTemplate = `{
                     "Common"
                 ],
                 "summary": "Query latest block",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -293,7 +249,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-data/{networkCode}/common/token-add": {
+        "/inner/chain-data/evm/common/token-add": {
             "post": {
                 "description": "Add a token definition into database-backed EVM token registry.",
                 "consumes": [
@@ -307,13 +263,6 @@ const docTemplate = `{
                 ],
                 "summary": "Add or update token",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Token add request",
                         "name": "request",
@@ -340,7 +289,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-data/{networkCode}/common/token-balance": {
+        "/inner/chain-data/evm/common/token-balance": {
             "post": {
                 "description": "Query token balance of an address for a token configured in the database-backed EVM token registry",
                 "consumes": [
@@ -354,13 +303,6 @@ const docTemplate = `{
                 ],
                 "summary": "Query token balance",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Token balance query payload",
                         "name": "request",
@@ -387,7 +329,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-data/{networkCode}/common/token-delete": {
+        "/inner/chain-data/evm/common/token-delete": {
             "post": {
                 "description": "Delete a token definition from database-backed EVM token registry by token code.",
                 "consumes": [
@@ -401,13 +343,6 @@ const docTemplate = `{
                 ],
                 "summary": "Delete token",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Token delete request",
                         "name": "request",
@@ -434,7 +369,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-data/{networkCode}/common/token-get": {
+        "/inner/chain-data/evm/common/token-get": {
             "post": {
                 "description": "Get a token definition from database-backed EVM token registry by token code.",
                 "consumes": [
@@ -448,13 +383,6 @@ const docTemplate = `{
                 ],
                 "summary": "Get token",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Token get request",
                         "name": "request",
@@ -481,7 +409,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-data/{networkCode}/common/token-list": {
+        "/inner/chain-data/evm/common/token-list": {
             "post": {
                 "description": "List token definitions from database-backed EVM token registry.",
                 "consumes": [
@@ -495,13 +423,6 @@ const docTemplate = `{
                 ],
                 "summary": "List tokens",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Token list request",
                         "name": "request",
@@ -528,7 +449,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-data/{networkCode}/common/token-supply": {
+        "/inner/chain-data/evm/common/token-supply": {
             "post": {
                 "description": "Query total supply of a token configured in the database-backed EVM token registry",
                 "consumes": [
@@ -542,13 +463,6 @@ const docTemplate = `{
                 ],
                 "summary": "Query token supply",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Token supply query payload",
                         "name": "request",
@@ -575,7 +489,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-data/{networkCode}/common/tx-query": {
+        "/inner/chain-data/evm/common/tx-query": {
             "post": {
                 "description": "Query transaction status and decoded events by transaction hash",
                 "consumes": [
@@ -589,13 +503,6 @@ const docTemplate = `{
                 ],
                 "summary": "Query transaction",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Transaction query payload",
                         "name": "request",
@@ -622,9 +529,9 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-invoke/{networkCode}/common/tx-send": {
+        "/inner/chain-invoke/evm/common/tx-send": {
             "post": {
-                "description": "Submit a signed raw EVM transaction to the configured network",
+                "description": "Submit either a signed raw EVM transaction or an ERC-4337 UserOperation to the configured RPC or bundler",
                 "consumes": [
                     "application/json"
                 ],
@@ -634,15 +541,8 @@ const docTemplate = `{
                 "tags": [
                     "Common"
                 ],
-                "summary": "Send raw transaction",
+                "summary": "Send transaction",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Signed transaction payload",
                         "name": "request",
@@ -669,7 +569,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/chain-invoke/{networkCode}/wallet/faucet": {
+        "/inner/chain-invoke/evm/wallet/faucet": {
             "post": {
                 "description": "Create and submit a native token transfer from the configured wallet",
                 "consumes": [
@@ -683,13 +583,6 @@ const docTemplate = `{
                 ],
                 "summary": "Send native token",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Wallet transfer payload",
                         "name": "request",
@@ -756,7 +649,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/inner/contract/{networkCode}/list": {
+        "/inner/contract/list/evm": {
             "post": {
                 "description": "Query currently applied contract configurations for the configured network",
                 "produces": [
@@ -766,15 +659,6 @@ const docTemplate = `{
                     "Contract"
                 ],
                 "summary": "List current contracts",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Configured network code",
-                        "name": "networkCode",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1075,8 +959,19 @@ const docTemplate = `{
         "models.TxSendRequest": {
             "type": "object",
             "properties": {
+                "eip7702Auth": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "entryPoint": {
+                    "type": "string"
+                },
                 "txSignResult": {
                     "type": "string"
+                },
+                "userOperation": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             }
         },
