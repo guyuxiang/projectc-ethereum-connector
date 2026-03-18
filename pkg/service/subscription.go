@@ -398,6 +398,11 @@ const defaultTxConfirmBlockCount = 3
 const defaultAddressConfirmBlockCount = 3
 
 func deliverTxCallback(row *store.TxCallbackRecordPO) error {
+	normalizedPayload := normalizeCallbackPayload(row.Payload)
+	if normalizedPayload != row.Payload {
+		row.Payload = normalizedPayload
+		row.PayloadHash = hashPayload([]byte(normalizedPayload))
+	}
 	err := publishTxCallback([]byte(row.Payload))
 	if err != nil {
 		row.Status = "PENDING"
@@ -426,6 +431,54 @@ func hashPayload(payload []byte) string {
 
 func publishTxCallback(body []byte) error {
 	return publishHTTPCallback(body, callbackKindTx)
+}
+
+func normalizeCallbackPayload(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return raw
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		return raw
+	}
+
+	txEventsRaw, ok := payload["txEvents"]
+	if !ok {
+		return raw
+	}
+	txEvents, ok := txEventsRaw.([]interface{})
+	if !ok {
+		return raw
+	}
+
+	changed := false
+	for i := range txEvents {
+		event, ok := txEvents[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		dataRaw, ok := event["data"].(string)
+		if !ok {
+			continue
+		}
+		var decoded interface{}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(dataRaw)), &decoded); err != nil {
+			continue
+		}
+		event["data"] = decoded
+		changed = true
+	}
+
+	if !changed {
+		return raw
+	}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return raw
+	}
+	return string(out)
 }
 
 func publishCancelCallback(body []byte) error {
