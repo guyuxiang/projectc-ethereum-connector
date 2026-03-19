@@ -29,6 +29,6 @@ wallet:
 network:
   networkcode: "sepolia"
   rpcurl: "https://sepolia.gateway.tenderly.co/2xRV8vQTDZE3KmbMjo4jCm"
-  bundlerurl: "https://your-skandha-bundler"
+  bundlerurl: "http://unblock-eth-bundler/rpc"
   chainid: 11155111
   nativesymbol: "ETH"
