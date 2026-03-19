@@ -6,10 +6,7 @@ import (
 )
 
 type TxSendRequest struct {
-	TxSignResult  string                 `json:"txSignResult"`
-	EntryPoint    string                 `json:"entryPoint"`
-	UserOperation map[string]interface{} `json:"userOperation"`
-	EIP7702Auth   map[string]interface{} `json:"eip7702Auth"`
+	TxSignResult string `json:"txSignResult"`
 }
 
 type TxSendResponse struct {

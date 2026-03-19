@@ -58,22 +58,15 @@ func NewEthereumService(contracts ContractRegistryService, tokens TokenRegistryS
 }
 
 func (s *ethereumService) SendTransaction(ctx context.Context, req models.TxSendRequest) (*models.TxSendResponse, error) {
-	if strings.TrimSpace(req.TxSignResult) != "" && len(req.UserOperation) > 0 {
-		return nil, errors.New("txSignResult and userOperation cannot be provided together")
+	txSignResult := strings.TrimSpace(req.TxSignResult)
+	if txSignResult == "" {
+		return nil, errors.New("txSignResult is required")
 	}
 
-	switch {
-	case strings.TrimSpace(req.TxSignResult) != "":
-		txHash, err := s.sendRawTransaction(ctx, req.TxSignResult)
-		if err != nil {
-			return nil, err
-		}
-		return &models.TxSendResponse{
-			TxCode:     txHash,
-			TxCodeType: "txHash",
-		}, nil
-	case len(req.UserOperation) > 0:
-		userOpHash, err := s.sendUserOperation(ctx, req.UserOperation, req.EntryPoint, req.EIP7702Auth)
+	if params, ok, err := parseUserOperationParams(txSignResult); err != nil {
+		return nil, err
+	} else if ok {
+		userOpHash, err := s.sendUserOperation(ctx, params)
 		if err != nil {
 			return nil, err
 		}
@@ -81,9 +74,16 @@ func (s *ethereumService) SendTransaction(ctx context.Context, req models.TxSend
 			TxCode:     userOpHash,
 			TxCodeType: "userOpHash",
 		}, nil
-	default:
-		return nil, errors.New("either txSignResult or userOperation is required")
 	}
+
+	txHash, err := s.sendRawTransaction(ctx, txSignResult)
+	if err != nil {
+		return nil, err
+	}
+	return &models.TxSendResponse{
+		TxCode:     txHash,
+		TxCodeType: "txHash",
+	}, nil
 }
 
 func (s *ethereumService) sendRawTransaction(ctx context.Context, signedTx string) (string, error) {
@@ -99,25 +99,38 @@ func (s *ethereumService) sendRawTransaction(ctx context.Context, signedTx strin
 	return txHash, nil
 }
 
-func (s *ethereumService) sendUserOperation(ctx context.Context, userOperation map[string]interface{}, entryPoint string, eip7702Auth map[string]interface{}) (string, error) {
-	if len(userOperation) == 0 {
-		return "", errors.New("userOperation is required")
-	}
-	entryPoint = strings.TrimSpace(entryPoint)
-	if entryPoint == "" {
-		return "", errors.New("entryPoint is required")
-	}
-
-	params := []interface{}{userOperation, entryPoint}
-	if len(eip7702Auth) > 0 {
-		params = append(params, eip7702Auth)
-	}
-
+func (s *ethereumService) sendUserOperation(ctx context.Context, params []interface{}) (string, error) {
 	var userOpHash string
 	if err := s.rpcCallToURL(ctx, s.bundlerURL(), "eth_sendUserOperation", params, &userOpHash); err != nil {
 		return "", err
 	}
 	return userOpHash, nil
+}
+
+func parseUserOperationParams(value string) ([]interface{}, bool, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, false, errors.New("txSignResult is required")
+	}
+	if !strings.HasPrefix(value, "[") {
+		return nil, false, nil
+	}
+
+	var params []interface{}
+	if err := json.Unmarshal([]byte(value), &params); err != nil {
+		return nil, false, fmt.Errorf("invalid txSignResult json params")
+	}
+	if len(params) < 2 {
+		return nil, false, errors.New("userOperation params must include userOperation and entryPoint")
+	}
+	if _, ok := params[0].(map[string]interface{}); !ok {
+		return nil, false, errors.New("userOperation params[0] must be an object")
+	}
+	entryPoint, ok := params[1].(string)
+	if !ok || strings.TrimSpace(entryPoint) == "" {
+		return nil, false, errors.New("userOperation params[1] must be entryPoint")
+	}
+	return params, true, nil
 }
 
 func (s *ethereumService) QueryTransaction(ctx context.Context, txHash string) (*models.TxQueryResponse, error) {
