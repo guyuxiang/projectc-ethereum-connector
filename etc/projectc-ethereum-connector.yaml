@@ -30,5 +30,6 @@ network:
   networkcode: "sepolia"
   rpcurl: "https://sepolia.gateway.tenderly.co/2xRV8vQTDZE3KmbMjo4jCm"
   bundlerurl: "http://unblock-eth-bundler/rpc"
+  timeoutsec: 30
   chainid: 11155111
   nativesymbol: "ETH"

@@ -52,6 +52,7 @@ type NetworkConfig struct {
 	Networkcode  string `yaml:"networkcode"`
 	Rpcurl       string `yaml:"rpcurl"`
 	Bundlerurl   string `yaml:"bundlerurl"`
+	Timeoutsec   int    `yaml:"timeoutsec"`
 	Chainid      int64  `yaml:"chainid"`
 	Nativesymbol string `yaml:"nativesymbol"`
 }

@@ -48,8 +48,12 @@ type cachedABI struct {
 
 func NewEthereumService(contracts ContractRegistryService, tokens TokenRegistryService) EthereumService {
 	network, _ := configuredNetwork()
+	timeout := 30 * time.Second
+	if network.Timeoutsec > 0 {
+		timeout = time.Duration(network.Timeoutsec) * time.Second
+	}
 	return &ethereumService{
-		client:    &http.Client{Timeout: 15 * time.Second},
+		client:    &http.Client{Timeout: timeout},
 		network:   network,
 		contracts: contracts,
 		tokens:    tokens,
