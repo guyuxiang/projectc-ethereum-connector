@@ -182,7 +182,7 @@ func (s *ethereumService) queryNativeTransaction(ctx context.Context, txHash str
 			NetworkCode:    networkCode,
 			BlockNumber:    hexUint64(receipt.BlockNumber),
 			Timestamp:      blockTimestamp,
-			Fee:            calcFee(receipt.EffectiveGasPrice, receipt.GasUsed),
+			Fee:            calcFeeEther(receipt.EffectiveGasPrice, receipt.GasUsed),
 			From:           tx.From,
 			To:             tx.To,
 			Amount:         hexToBigIntString(tx.Value),
@@ -234,9 +234,9 @@ func (s *ethereumService) queryUserOperation(ctx context.Context, userOpHash str
 	if receipt.Success || receipt.Receipt.Status == "" || receipt.Receipt.Status == "0x1" {
 		status = "SUCCESS"
 	}
-	fee := calcFee(receipt.Receipt.EffectiveGasPrice, receipt.Receipt.GasUsed)
+	fee := calcFeeEther(receipt.Receipt.EffectiveGasPrice, receipt.Receipt.GasUsed)
 	if fee == "0" && receipt.ActualGasCost != "" {
-		fee = hexToBigIntString(receipt.ActualGasCost)
+		fee = formatWeiHexToEther(receipt.ActualGasCost)
 	}
 
 	result := &models.TxQueryResponse{
@@ -511,6 +511,35 @@ func calcFee(priceHex, gasUsedHex string) string {
 		return "0"
 	}
 	return new(big.Int).Mul(price, gasUsed).String()
+}
+
+func calcFeeEther(priceHex, gasUsedHex string) string {
+	feeWei := calcFee(priceHex, gasUsedHex)
+	if feeWei == "0" {
+		return "0"
+	}
+	wei, ok := new(big.Int).SetString(feeWei, 10)
+	if !ok || wei == nil {
+		return "0"
+	}
+	return formatWeiToEtherString(wei)
+}
+
+func formatWeiHexToEther(value string) string {
+	number := hexToBigInt(value)
+	if number == nil {
+		return "0"
+	}
+	return formatWeiToEtherString(number)
+}
+
+func formatWeiToEtherString(wei *big.Int) string {
+	if wei == nil || wei.Sign() == 0 {
+		return "0"
+	}
+	rat := new(big.Rat).SetInt(wei)
+	denominator := new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
+	return new(big.Rat).Quo(rat, denominator).FloatString(18)
 }
 
 func hexUint64(value string) uint64 {

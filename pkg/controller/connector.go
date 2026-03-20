@@ -65,6 +65,14 @@ func (ctl *ConnectorController) TxSend(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	if resp != nil && resp.TxCode != "" {
+		ctl.subscriptions.AddTx(models.TxSubscribeRequest{
+			TxCode: resp.TxCode,
+			SubscribeRange: models.TxSubscribeRange{
+				EndTimestamp: time.Now().Add(24 * time.Hour).UnixMilli(),
+			},
+		})
+	}
 	c.JSON(http.StatusOK, models.Success(resp))
 }
 
